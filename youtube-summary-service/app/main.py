@@ -8,6 +8,8 @@ from app.db import init_db
 from app.youtube import extract_video_id, fetch_transcript
 from fastapi import HTTPException
 
+from app.gemini import safe_summarize
+
 # Load environment variables
 load_dotenv()
 
@@ -50,4 +52,27 @@ def test_transcript(url: str):
     return {
         "video_id": video_id,
         "transcript_preview": transcript[:500]
+    }
+
+# temp summary endpoint
+@app.post("/test/summarize")
+def test_summarize(url: str):
+    from app.youtube import extract_video_id, fetch_transcript
+    from fastapi import HTTPException
+
+    video_id = extract_video_id(url)
+    if not video_id:
+        raise HTTPException(status_code=400, detail="Invalid YouTube URL")
+
+    transcript = fetch_transcript(video_id)
+    if not transcript:
+        raise HTTPException(status_code=404, detail="Transcript unavailable")
+
+    summary = safe_summarize(transcript)
+    if not summary:
+        raise HTTPException(status_code=500, detail="Gemini summarization failed")
+
+    return {
+        "video_id": video_id,
+        "summary": summary
     }
