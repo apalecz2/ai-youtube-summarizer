@@ -5,6 +5,9 @@ import os
 
 from app.db import init_db
 
+from app.youtube import extract_video_id, fetch_transcript
+from fastapi import HTTPException
+
 # Load environment variables
 load_dotenv()
 
@@ -26,4 +29,25 @@ def health():
     return {
         "status": "ok",
         "service": "youtube-summary-service"
+    }
+
+# temp test endpoint
+@app.post("/test/transcript")
+def test_transcript(url: str):
+    video_id = extract_video_id(url)
+
+    if not video_id:
+        raise HTTPException(status_code=400, detail="Invalid YouTube URL")
+
+    transcript = fetch_transcript(video_id)
+
+    if not transcript:
+        raise HTTPException(
+            status_code=404,
+            detail="Transcript unavailable"
+        )
+
+    return {
+        "video_id": video_id,
+        "transcript_preview": transcript[:500]
     }
