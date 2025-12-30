@@ -1,6 +1,6 @@
 fastapi
 uvicorn
 youtube-transcript-api
-google-generativeai
+google-genai
 feedparser
 python-dotenv
