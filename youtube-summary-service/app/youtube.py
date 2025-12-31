@@ -52,3 +52,31 @@ def fetch_transcript(video_id: str) -> str | None:
     except Exception as e:
         print(f"DEBUG: Failed to fetch transcript for {video_id}. Error: {e}")
         return None
+    
+# Get video info
+from youtube_transcript_api import YouTubeTranscriptApi
+
+def fetch_video_metadata(video_id: str) -> dict:
+    """
+    Best-effort metadata extraction using youtube-transcript-api.
+    Falls back to placeholders if unavailable.
+    """
+    try:
+        ytt_api = YouTubeTranscriptApi()
+        transcript_list = ytt_api.list(video_id)
+
+        # These attributes are NOT guaranteed, so use getattr safely
+        title = getattr(transcript_list, "video_title", None)
+        channel = getattr(transcript_list, "video_owner", None)
+
+        return {
+            "title": title or "Unknown Title",
+            "channel": channel or "Unknown Channel",
+        }
+
+    except Exception as e:
+        print(f"DEBUG: Failed to fetch metadata for {video_id}. Error: {e}")
+        return {
+            "title": "Unknown Title",
+            "channel": "Unknown Channel",
+        }

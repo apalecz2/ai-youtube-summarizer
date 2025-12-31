@@ -10,6 +10,9 @@ from fastapi import HTTPException
 
 from app.gemini import safe_summarize
 
+from app.emailer import send_summary_email
+from app.youtube import fetch_video_metadata
+
 # Load environment variables
 load_dotenv()
 
@@ -76,3 +79,32 @@ def test_summarize(url: str):
         "video_id": video_id,
         "summary": summary
     }
+
+
+@app.post("/test/email")
+def test_email(url: str):
+    video_id = extract_video_id(url)
+    if not video_id:
+        raise HTTPException(status_code=400, detail="Invalid YouTube URL")
+
+    transcript = fetch_transcript(video_id)
+    if not transcript:
+        raise HTTPException(status_code=404, detail="Transcript unavailable")
+
+    summary = safe_summarize(transcript)
+    if not summary:
+        raise HTTPException(status_code=500, detail="Gemini summarization failed")
+
+    metadata = fetch_video_metadata(video_id)
+
+    success = send_summary_email(
+        video_title=metadata["title"],
+        channel_name=metadata["channel"],
+        summary=summary,
+        youtube_url=url
+    )
+
+    if not success:
+        raise HTTPException(status_code=500, detail="Email send failed")
+
+    return {"status": "email sent"}
