@@ -4,3 +4,4 @@ youtube-transcript-api
 google-genai
 feedparser
 python-dotenv
+python-multipart
