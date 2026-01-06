@@ -1,0 +1,21 @@
+services:
+  api:
+    build: .
+    container_name: youtube-summary
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data
+    environment:
+      # Ensure python doesn't buffer logs so you can see them in 'docker logs'
+      - PYTHONUNBUFFERED=1
+
+  # Optional: Cloudflare Tunnel inside Docker
+  # If you prefer to manage the tunnel via config file rather than the dashboard
+  # tunnel:
+  #   image: cloudflare/cloudflared:latest
+  #   restart: unless-stopped
+  #   command: tunnel --no-autoupdate run --token YOUR_CLOUDFLARE_TOKEN
