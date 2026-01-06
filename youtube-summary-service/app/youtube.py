@@ -26,8 +26,6 @@ def extract_video_id(url: str) -> str | None:
     return None
 
 # Fetch transcript helper (no timestamps)
-from youtube_transcript_api import YouTubeTranscriptApi
-
 def fetch_transcript(video_id: str) -> str | None:
     try:
         # 1. Create an instance of the API
@@ -53,8 +51,7 @@ def fetch_transcript(video_id: str) -> str | None:
         print(f"DEBUG: Failed to fetch transcript for {video_id}. Error: {e}")
         return None
     
-# Get video info
-from youtube_transcript_api import YouTubeTranscriptApi
+
 
 def fetch_video_metadata(video_id: str) -> dict:
     """

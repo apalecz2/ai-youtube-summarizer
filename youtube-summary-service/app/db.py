@@ -1,13 +1,19 @@
 import sqlite3
 from pathlib import Path
 
-DB_PATH = Path("data.db")
+# This has to point to the folder that's persisted in docker
+DB_DIR = Path("data")
+DB_PATH = DB_DIR / "data.db"
 
 def get_connection():
     return sqlite3.connect(DB_PATH)
 
 # Database setup if it hasn't been already
 def init_db():
+    
+    # Create the directory if it doesn't exist (prevents FileNotFoundError)
+    DB_DIR.mkdir(exist_ok=True)
+    
     with get_connection() as conn:
         cursor = conn.cursor()
 
