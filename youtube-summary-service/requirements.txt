@@ -5,3 +5,4 @@ feedparser
 google-genai
 youtube-transcript-api
 requests
+python-multipart
