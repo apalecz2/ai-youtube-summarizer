@@ -40,10 +40,7 @@ jobs:
             Port 1919
             IdentityFile ~/.ssh/id_ed25519
             StrictHostKeyChecking no
-            ProxyCommand cloudflared access ssh \
-              --hostname %h \
-              --id ${{ secrets.CLOUDFLARE_ACCESS_CLIENT_ID }} \
-              --secret ${{ secrets.CLOUDFLARE_ACCESS_CLIENT_SECRET }}
+            ProxyCommand cloudflared access ssh --hostname %h --id ${{ secrets.CLOUDFLARE_ACCESS_CLIENT_ID }} --secret ${{ secrets.CLOUDFLARE_ACCESS_CLIENT_SECRET }}
           EOF
 
           chmod 600 ~/.ssh/config
