@@ -124,28 +124,25 @@ def summarize_video_and_email(
 ) -> None:
     
     # 1. FETCH METADATA FIRST
-    # Even if we have title/channel from RSS, we need duration/live_status to filter
     metadata = fetch_video_metadata(video_id)
     
     # 2. APPLY FILTERS
-    # Skip if it's an upcoming event
     if metadata["live_status"] == "is_upcoming":
-        print(f"SKIP: {video_id} is an upcoming live event.")
+        print(f"SKIP: {video_id} is an upcoming live event (will retry later).")
         return
 
-    # Skip if it is currently live (transcripts are often incomplete/missing until finished)
     if metadata["live_status"] == "is_live":
         print(f"SKIP: {video_id} is currently live.")
         return
 
-    # Skip "Shorts" (videos under 60 seconds)
     if metadata["duration"] and metadata["duration"] < 60:
-        print(f"SKIP: {video_id} is a Short (duration: {metadata['duration']}s).")
+        print(f"SKIP: {video_id} is a Short ({metadata['duration']}s).")
+        if mark_processed: mark_video_processed(video_id) # Mark so we don't check this short again
         return
     
-    # Skip very long videos (over 1hr = 3600 seconds)
     if metadata["duration"] and metadata["duration"] > 3600:
-        print(f"SKIP: {video_id} is long (duration: {metadata['duration']}s).")
+        print(f"SKIP: {video_id} is too long ({metadata['duration']}s).")
+        if mark_processed: mark_video_processed(video_id) # Mark so we don't check this long video again
         return
     
     # 3. PROCEED TO TRANSCRIPT
@@ -159,10 +156,11 @@ def summarize_video_and_email(
         print(f"ERROR: Summarization failed for {video_id}")
         return
     
-    # Finalize names (use RSS names if available, otherwise yt-dlp metadata)
+    # Finalize names (prioritize RSS feed data)
     final_title = video_title or metadata["title"]
     final_channel = channel_name or metadata["channel"]
 
+    # FIX: Use final_title and final_channel here
     send_summary_email(
         video_title=final_title,
         channel_name=final_channel,

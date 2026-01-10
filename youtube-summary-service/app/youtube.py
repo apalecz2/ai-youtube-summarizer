@@ -58,17 +58,28 @@ def fetch_video_metadata(video_input: str) -> dict:
         'quiet': True,
         'no_warnings': True,
         'skip_download': True,
+        'logger': None,
     }
     
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:  # type: ignore
+    with yt_dlp.YoutubeDL(ydl_opts) as ydl: # type: ignore
         try:
             info = ydl.extract_info(video_input, download=False)
             return {
                 "title": info.get('title', "Unknown Title"),
                 "channel": info.get('uploader', "Unknown Channel"),
                 "duration": info.get('duration', 0),
-                "live_status": info.get('live_status'), # 'is_live', 'is_upcoming', 'was_live', or 'not_live'
+                "live_status": info.get('live_status'), 
             }
         except Exception as e:
+            err_str = str(e)
+            # Detect if the error is specifically about an upcoming video/premiere
+            if "live event will begin" in err_str.lower() or "premieres in" in err_str.lower():
+                return {
+                    "title": "Upcoming Event", 
+                    "channel": "Unknown", 
+                    "duration": 0, 
+                    "live_status": "is_upcoming"
+                }
+            
             print(f"DEBUG: yt-dlp failed. Error: {e}")
             return {"title": "Unknown Title", "channel": "Unknown Channel", "duration": 0, "live_status": None}
