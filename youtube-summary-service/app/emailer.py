@@ -69,7 +69,7 @@ def send_summary_email(
     channel_name: str,
     summary: str,
     youtube_url: str,
-) -> bool:
+) -> None:
 
     msg = EmailMessage()
     msg["From"] = EMAIL_USERNAME
@@ -116,7 +116,7 @@ Watch here:
     try:
         access_token = get_gmail_access_token()
         if not EMAIL_USERNAME:
-            return False
+            return
         auth_string = build_xoauth2_string(EMAIL_USERNAME, access_token)
 
         with smtplib.SMTP(EMAIL_HOST, EMAIL_PORT, timeout=30) as server:
@@ -124,8 +124,8 @@ Watch here:
             server.docmd("AUTH", "XOAUTH2 " + auth_string)
             server.send_message(msg)
 
-        return True
+        return
 
     except Exception as e:
         print(f"[EMAIL ERROR] {e}")
-        return False
+        return

@@ -7,3 +7,4 @@ youtube-transcript-api
 requests
 python-multipart
 markdown
+yt_dlp
