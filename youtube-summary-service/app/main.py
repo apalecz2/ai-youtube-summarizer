@@ -122,6 +122,33 @@ def summarize_video_and_email(
     channel_name: Optional[str] = None,
     mark_processed: bool = False,
 ) -> None:
+    
+    # 1. FETCH METADATA FIRST
+    # Even if we have title/channel from RSS, we need duration/live_status to filter
+    metadata = fetch_video_metadata(video_id)
+    
+    # 2. APPLY FILTERS
+    # Skip if it's an upcoming event
+    if metadata["live_status"] == "is_upcoming":
+        print(f"SKIP: {video_id} is an upcoming live event.")
+        return
+
+    # Skip if it is currently live (transcripts are often incomplete/missing until finished)
+    if metadata["live_status"] == "is_live":
+        print(f"SKIP: {video_id} is currently live.")
+        return
+
+    # Skip "Shorts" (videos under 60 seconds)
+    if metadata["duration"] and metadata["duration"] < 60:
+        print(f"SKIP: {video_id} is a Short (duration: {metadata['duration']}s).")
+        return
+    
+    # Skip very long videos (over 1hr = 3600 seconds)
+    if metadata["duration"] and metadata["duration"] > 3600:
+        print(f"SKIP: {video_id} is long (duration: {metadata['duration']}s).")
+        return
+    
+    # 3. PROCEED TO TRANSCRIPT
     transcript = fetch_transcript(video_id)
     if not transcript:
         print(f"ERROR: No transcript for {video_id}")
@@ -132,15 +159,13 @@ def summarize_video_and_email(
         print(f"ERROR: Summarization failed for {video_id}")
         return
     
-    # Logic to ensure we have titles and channel names
-    if not video_title or not channel_name:
-        metadata = fetch_video_metadata(video_id)
-        video_title = video_title or metadata["title"]
-        channel_name = channel_name or metadata["channel"]
+    # Finalize names (use RSS names if available, otherwise yt-dlp metadata)
+    final_title = video_title or metadata["title"]
+    final_channel = channel_name or metadata["channel"]
 
     send_summary_email(
-        video_title=video_title,
-        channel_name=channel_name,
+        video_title=final_title,
+        channel_name=final_channel,
         summary=summary,
         youtube_url=video_url,
     )

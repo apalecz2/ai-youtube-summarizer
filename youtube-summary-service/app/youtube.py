@@ -54,23 +54,21 @@ def fetch_transcript(video_id: str) -> str | None:
     
     
 def fetch_video_metadata(video_input: str) -> dict:
-    """
-    Handles IDs, full URLs, and short URLs automatically.
-    """
     ydl_opts = {
         'quiet': True,
         'no_warnings': True,
         'skip_download': True,
     }
     
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl: # type: ignore
+    with yt_dlp.YoutubeDL(ydl_opts) as ydl:  # type: ignore
         try:
-            # works whether video_input is "NN4sm7gye0w" or the full URL
             info = ydl.extract_info(video_input, download=False)
             return {
                 "title": info.get('title', "Unknown Title"),
                 "channel": info.get('uploader', "Unknown Channel"),
+                "duration": info.get('duration', 0),
+                "live_status": info.get('live_status'), # 'is_live', 'is_upcoming', 'was_live', or 'not_live'
             }
         except Exception as e:
             print(f"DEBUG: yt-dlp failed. Error: {e}")
-            return {"title": "Unknown Title", "channel": "Unknown Channel"}
+            return {"title": "Unknown Title", "channel": "Unknown Channel", "duration": 0, "live_status": None}
