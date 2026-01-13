@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <title>YouTube Summary Service</title>
+    <style>
+        body {
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+            background: #0b1020;
+            color: #e6e6eb;
+            padding: 20px;
+            max-width: 1100px;
+            margin: auto;
+        }
+
+        h1 {
+            margin-bottom: 10px;
+        }
+
+        .card {
+            background: #141a33;
+            border-radius: 8px;
+            padding: 16px;
+            margin-bottom: 16px;
+            box-shadow: 0 0 0 1px #1f264d;
+        }
+
+        label {
+            display: block;
+            font-size: 0.9rem;
+            margin-bottom: 4px;
+            color: #b5b9ff;
+        }
+
+        input {
+            width: 100%;
+            padding: 8px;
+            margin-bottom: 10px;
+            border-radius: 6px;
+            border: none;
+            background: #0b1020;
+            color: white;
+            outline: 1px solid #2b3470;
+        }
+
+        button {
+            background: #5c6cff;
+            border: none;
+            color: white;
+            padding: 10px 14px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 600;
+            margin-right: 8px;
+        }
+
+        button:hover {
+            background: #7683ff;
+        }
+
+        pre {
+            background: #060912;
+            padding: 12px;
+            border-radius: 6px;
+            overflow-x: auto;
+            max-height: 350px;
+            font-size: 0.85rem;
+        }
+
+        .row {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        .row>* {
+            flex: 1;
+            min-width: 200px;
+        }
+
+        .small {
+            font-size: 0.8rem;
+            color: #aaa;
+        }
+    </style>
+</head>
+
+<body>
+
+    <h1>YouTube Summary Service</h1>
+    <p class="small">Quick and simple client to easily send requests to the service.</p>
+
+    <div class="card">
+        <label>Backend URL</label>
+        <input id="baseUrl" value="https://yt-api.aidenpaleczny.com">
+
+        <label>X-API-Key</label>
+        <input id="apiKey" placeholder="API_AUTH_TOKEN from .env">
+    </div>
+
+    <div class="card">
+        <h3>Health</h3>
+        <button onclick="health()">GET /health</button>
+    </div>
+
+    <div class="card">
+        <h3>Channels</h3>
+        <div class="row">
+            <div>
+                <label>Channel ID</label>
+                <input id="channelId" placeholder="UC_x5XG1OV2P6uZZ5FSM9Ttw">
+            </div>
+        </div>
+        <button onclick="addChannel()">Add Channel</button>
+        <button onclick="removeChannel()">Remove Channel</button>
+        <button onclick="listChannels()">List Channels</button>
+    </div>
+
+    <div class="card">
+        <h3>Summarize Video</h3>
+        <label>YouTube URL</label>
+        <input id="videoUrl" placeholder="https://www.youtube.com/watch?v=...">
+        <button onclick="summarize()">POST /summarize</button>
+    </div>
+
+    <div class="card">
+        <h3>Polling</h3>
+        <button onclick="poll()">POST /poll</button>
+    </div>
+
+    <div class="card">
+        <h3>Raw API Response</h3>
+        <pre id="output">Waiting for request…</pre>
+    </div>
+
+    <script>
+        function headers() {
+            return {
+                "X-API-Key": document.getElementById("apiKey").value
+            };
+        }
+
+        function base() {
+            return document.getElementById("baseUrl").value.replace(/\/$/, "");
+        }
+
+        async function showResponse(res) {
+            let text;
+            try {
+                const json = await res.json();
+                text = JSON.stringify(json, null, 2);
+            } catch {
+                text = await res.text();
+            }
+
+            document.getElementById("output").textContent =
+                res.status + " " + res.statusText + "\n\n" + text;
+        }
+
+        async function health() {
+            const res = await fetch(base() + "/health");
+            await showResponse(res);
+        }
+
+        async function addChannel() {
+            const id = document.getElementById("channelId").value;
+            const form = new FormData();
+            form.append("channel_id", id);
+
+            const res = await fetch(base() + "/channels", {
+                method: "POST",
+                headers: headers(),
+                body: form
+            });
+
+            await showResponse(res);
+        }
+
+        async function removeChannel() {
+            const id = document.getElementById("channelId").value;
+
+            const res = await fetch(base() + "/channels/" + encodeURIComponent(id), {
+                method: "DELETE",
+                headers: headers()
+            });
+
+            await showResponse(res);
+        }
+
+        async function listChannels() {
+            const res = await fetch(base() + "/channels", {
+                headers: headers()
+            });
+
+            await showResponse(res);
+        }
+
+        async function summarize() {
+            const url = document.getElementById("videoUrl").value;
+            const form = new FormData();
+            form.append("url", url);
+
+            const res = await fetch(base() + "/summarize", {
+                method: "POST",
+                headers: headers(),
+                body: form
+            });
+
+            await showResponse(res);
+        }
+
+        async function poll() {
+            const res = await fetch(base() + "/poll", {
+                method: "POST",
+                headers: headers()
+            });
+
+            await showResponse(res);
+        }
+    </script>
+
+</body>
+
+</html>
