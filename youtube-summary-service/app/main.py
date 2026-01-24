@@ -1,5 +1,5 @@
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, Form, Header, Depends, HTTPException
+from fastapi import FastAPI, Form, Header, Depends, HTTPException, Response, status
 from dotenv import load_dotenv
 import os
 import sys
@@ -31,6 +31,11 @@ app = FastAPI(
 )
 
 # Check app status endpoint
+@app.head("/health")
+def health_check_head():
+    # Return 200 OK with no body
+    return Response(status_code=status.HTTP_200_OK)
+
 @app.get("/health")
 def health():
     return {
