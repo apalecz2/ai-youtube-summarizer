@@ -1,5 +1,5 @@
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, Form, Header, Depends, HTTPException, BackgroundTasks
+from fastapi import FastAPI, Form, Header, Depends, HTTPException, BackgroundTasks, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 import os
@@ -38,6 +38,11 @@ app.add_middleware(
 )
 
 # Check app status endpoint
+@app.head("/health")
+def health_check_head():
+    # Return 200 OK with no body
+    return Response(status_code=status.HTTP_200_OK)
+
 @app.get("/health")
 def health():
     return {
