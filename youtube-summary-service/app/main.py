@@ -1,17 +1,16 @@
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, Form, Header, Depends, HTTPException, Response, status
+from fastapi import FastAPI, Form, Header, Depends, HTTPException, BackgroundTasks, Response, status
+from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 import os
 import sys
 from typing import Any, Optional
 import feedparser
+import time
 
 from app.db import init_db, add_channel, remove_channel, get_channels, is_video_processed, mark_video_processed
-
 from app.youtube import extract_video_id, fetch_transcript
-
 from app.gemini import safe_summarize
-
 from app.emailer import send_summary_email
 from app.youtube import fetch_video_metadata
 
@@ -28,6 +27,14 @@ app = FastAPI(
     title="YouTube Summary Service",
     version="0.1.0",
     lifespan=lifespan
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["null"],
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 # Check app status endpoint
@@ -73,28 +80,23 @@ def api_list_channels(auth=Depends(check_auth)):
 
 # Summary endpoint to send email for given video
 @app.post("/summarize")
-def api_summarize(url: str = Form(...), auth=Depends(check_auth)):
+def api_summarize(background_tasks: BackgroundTasks, url: str = Form(...), auth=Depends(check_auth)):
     video_id = extract_video_id(url)
     if not video_id:
         raise HTTPException(status_code=400, detail="Invalid YouTube URL")
 
-    result = summarize_video_and_email(
-        video_id=video_id,
-        video_url=url,
-    )
+    # Add the long-running function to the background
+    background_tasks.add_task(summarize_video_and_email, video_id=video_id, video_url=url)
 
-    if result["status"] == "no_transcript":
-        raise HTTPException(status_code=404, detail="Transcript unavailable")
-    if result["status"] == "summarization_failed":
-        raise HTTPException(status_code=500, detail="Summarization failed")
-
-    return result
+    return {"status": "processing", "message": "Summarization started in the background", "video_id": video_id}
 
 @app.post("/poll")
-def api_poll(auth=Depends(check_auth)):
-    channels = get_channels()
-    results = []
+def api_poll(background_tasks: BackgroundTasks, auth=Depends(check_auth)):
+    background_tasks.add_task(run_poll_in_background)
+    return {"status": "polling_started", "message": "Checking channels for new videos in background."}
 
+def run_poll_in_background():
+    channels = get_channels()
     for channel_id in channels:
         rss_url = f"https://www.youtube.com/feeds/videos.xml?channel_id={channel_id}"
         feed = feedparser.parse(rss_url)
@@ -102,25 +104,27 @@ def api_poll(auth=Depends(check_auth)):
             continue
 
         latest = feed.entries[0]
+        
         video_id = extract_video_id_from_entry(latest)
-        video_url = f"https://www.youtube.com/watch?v={video_id}"
-
-        if not video_id or not video_url:
+        
+        if not video_id or is_video_processed(video_id):
             continue
             
-        if is_video_processed(video_id):
-            continue
-        
-        # Note that this still marks videos processed even if the summary / transcript / email fails
-        result = summarize_video_and_email(
+        video_url = f"https://www.youtube.com/watch?v={video_id}"
+        video_title = getattr(latest, "title", "Unknown Title")
+        channel_name = getattr(latest, "author", "Unknown Channel")
+
+        # Run the summarization logic
+        summarize_video_and_email(
             video_id=video_id,
             video_url=video_url,
+            video_title=video_title,
+            channel_name=channel_name,
             mark_processed=True,
         )
-
-        results.append(result)
-
-    return {"results": results}
+        
+        # Avoid rate limits for gemini
+        time.sleep(2)
 
 
 # Abstracted function to not duplicate summarization logic, called by /poll and /summarize (/poll marks them as processed)
@@ -128,21 +132,52 @@ def summarize_video_and_email(
     *,
     video_id: str,
     video_url: str,
+    video_title: Optional[str] = None,
+    channel_name: Optional[str] = None,
     mark_processed: bool = False,
-) -> dict:
+) -> None:
+    
+    # 1. FETCH METADATA FIRST
+    metadata = fetch_video_metadata(video_id)
+    
+    # 2. APPLY FILTERS
+    if metadata["live_status"] == "is_upcoming":
+        print(f"SKIP: {video_id} is an upcoming live event (will retry later).")
+        return
+
+    if metadata["live_status"] == "is_live":
+        print(f"SKIP: {video_id} is currently live.")
+        return
+
+    if metadata["duration"] and metadata["duration"] < 60:
+        print(f"SKIP: {video_id} is a Short ({metadata['duration']}s).")
+        if mark_processed: mark_video_processed(video_id) # Mark so we don't check this short again
+        return
+    
+    if metadata["duration"] and metadata["duration"] > 3600:
+        print(f"SKIP: {video_id} is too long ({metadata['duration']}s).")
+        if mark_processed: mark_video_processed(video_id) # Mark so we don't check this long video again
+        return
+    
+    # 3. PROCEED TO TRANSCRIPT
     transcript = fetch_transcript(video_id)
     if not transcript:
-        return {"status": "no_transcript"}
+        print(f"ERROR: No transcript for {video_id}")
+        return
 
     summary = safe_summarize(transcript)
     if not summary:
-        return {"status": "summarization_failed"}
+        print(f"ERROR: Summarization failed for {video_id}")
+        return
+    
+    # Finalize names (prioritize RSS feed data)
+    final_title = video_title or metadata["title"]
+    final_channel = channel_name or metadata["channel"]
 
-    metadata = fetch_video_metadata(video_id)
-
-    email_success = send_summary_email(
-        video_title=metadata["title"],
-        channel_name=metadata["channel"],
+    # FIX: Use final_title and final_channel here
+    send_summary_email(
+        video_title=final_title,
+        channel_name=final_channel,
         summary=summary,
         youtube_url=video_url,
     )
@@ -150,12 +185,8 @@ def summarize_video_and_email(
     if mark_processed:
         mark_video_processed(video_id)
 
-    return {
-        "status": "ok",
-        "summary": summary,
-        "email_sent": email_success,
-        "video_id": video_id,
-    }
+    print(f"SUCCESS: Summary sent for {video_id}")
+
 
 def extract_video_id_from_entry(entry: Any) -> Optional[str]:
     video_id = getattr(entry, "yt_videoid", None)

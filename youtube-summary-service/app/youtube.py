@@ -1,5 +1,6 @@
 from urllib.parse import urlparse, parse_qs
 from youtube_transcript_api import YouTubeTranscriptApi
+import yt_dlp
 
 def extract_video_id(url: str) -> str | None:
     """
@@ -51,29 +52,34 @@ def fetch_transcript(video_id: str) -> str | None:
         print(f"DEBUG: Failed to fetch transcript for {video_id}. Error: {e}")
         return None
     
-
-
-def fetch_video_metadata(video_id: str) -> dict:
-    """
-    Best-effort metadata extraction using youtube-transcript-api.
-    Falls back to placeholders if unavailable.
-    """
-    try:
-        ytt_api = YouTubeTranscriptApi()
-        transcript_list = ytt_api.list(video_id)
-
-        # These attributes are NOT guaranteed, so use getattr safely
-        title = getattr(transcript_list, "video_title", None)
-        channel = getattr(transcript_list, "video_owner", None)
-
-        return {
-            "title": title or "Unknown Title",
-            "channel": channel or "Unknown Channel",
-        }
-
-    except Exception as e:
-        print(f"DEBUG: Failed to fetch metadata for {video_id}. Error: {e}")
-        return {
-            "title": "Unknown Title",
-            "channel": "Unknown Channel",
-        }
+    
+def fetch_video_metadata(video_input: str) -> dict:
+    ydl_opts = {
+        'quiet': True,
+        'no_warnings': True,
+        'skip_download': True,
+        'logger': None,
+    }
+    
+    with yt_dlp.YoutubeDL(ydl_opts) as ydl: # type: ignore
+        try:
+            info = ydl.extract_info(video_input, download=False)
+            return {
+                "title": info.get('title', "Unknown Title"),
+                "channel": info.get('uploader', "Unknown Channel"),
+                "duration": info.get('duration', 0),
+                "live_status": info.get('live_status'), 
+            }
+        except Exception as e:
+            err_str = str(e)
+            # Detect if the error is specifically about an upcoming video/premiere
+            if "live event will begin" in err_str.lower() or "premieres in" in err_str.lower():
+                return {
+                    "title": "Upcoming Event", 
+                    "channel": "Unknown", 
+                    "duration": 0, 
+                    "live_status": "is_upcoming"
+                }
+            
+            print(f"DEBUG: yt-dlp failed. Error: {e}")
+            return {"title": "Unknown Title", "channel": "Unknown Channel", "duration": 0, "live_status": None}
