@@ -40,11 +40,26 @@ def summarize_chunk(text: str) -> str:
 
 
 
-def summarize_full_transcript(transcript: str) -> str:
+def summarize_single(text: str) -> str:
+    prompt = (
+        "Summarize the following YouTube video transcript clearly and concisely. "
+        "Provide a well-structured summary covering all the key points, "
+        "main arguments, and important details.\n\n"
+        f"{text}"
+    )
+
+    response = client.models.generate_content(
+        model=MODEL_NAME,
+        contents=prompt
+    )
+
+    return response.text.strip() if response.text else ""
+
+
+def summarize_full_transcript(transcript: str, mode: str = "concise") -> str:
     # 1. Check if the transcript fits in a single chunk
     if len(transcript) <= MAX_CHARS_PER_CHUNK:
-        # Direct summarization - no chunking or combining
-        return summarize_chunk(transcript)
+        return summarize_single(transcript)
 
     # 2. Otherwise, proceed with multi-chunk logic
     chunks = chunk_text(transcript)
@@ -54,12 +69,17 @@ def summarize_full_transcript(transcript: str) -> str:
         try:
             summary = summarize_chunk(chunk)
             chunk_summaries.append(summary)
-            time.sleep(1) 
+            time.sleep(1)
         except Exception as e:
             chunk_summaries.append(f"[Error: {e}]")
 
     combined = "\n\n".join(chunk_summaries)
 
+    # In detailed mode, just stitch the chunk summaries together directly
+    if mode == "detailed":
+        return "\n\n---\n\n".join(chunk_summaries)
+
+    # Default concise mode: combine into a shorter summary
     final_prompt = (
         "You are given summaries of parts of a YouTube video. "
         "Combine them into a single, well-structured summary.\n\n"
@@ -73,9 +93,9 @@ def summarize_full_transcript(transcript: str) -> str:
 
     return response.text.strip() if response.text else ""
 
-def safe_summarize(transcript: str) -> str | None:
+def safe_summarize(transcript: str, mode: str = "concise") -> str | None:
     try:
-        return summarize_full_transcript(transcript)
+        return summarize_full_transcript(transcript, mode=mode)
     except Exception as e:
         print(f"Summarization failed: {e}")
         return None
