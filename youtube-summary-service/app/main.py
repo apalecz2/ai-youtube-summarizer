@@ -80,15 +80,18 @@ def api_list_channels(auth=Depends(check_auth)):
 
 # Summary endpoint to send email for given video
 @app.post("/summarize")
-def api_summarize(background_tasks: BackgroundTasks, url: str = Form(...), auth=Depends(check_auth)):
+def api_summarize(background_tasks: BackgroundTasks, url: str = Form(...), mode: str = Form("concise"), auth=Depends(check_auth)):
     video_id = extract_video_id(url)
     if not video_id:
         raise HTTPException(status_code=400, detail="Invalid YouTube URL")
 
-    # Add the long-running function to the background
-    background_tasks.add_task(summarize_video_and_email, video_id=video_id, video_url=url)
+    if mode not in ("concise", "detailed"):
+        raise HTTPException(status_code=400, detail="Invalid mode. Must be 'concise' or 'detailed'.")
 
-    return {"status": "processing", "message": "Summarization started in the background", "video_id": video_id}
+    # Add the long-running function to the background
+    background_tasks.add_task(summarize_video_and_email, video_id=video_id, video_url=url, allow_long=True, mode=mode)
+
+    return {"status": "processing", "message": "Summarization started in the background", "video_id": video_id, "mode": mode}
 
 @app.post("/poll")
 def api_poll(background_tasks: BackgroundTasks, auth=Depends(check_auth)):
@@ -135,6 +138,8 @@ def summarize_video_and_email(
     video_title: Optional[str] = None,
     channel_name: Optional[str] = None,
     mark_processed: bool = False,
+    allow_long: bool = False,
+    mode: str = "concise",
 ) -> None:
     
     # 1. FETCH METADATA FIRST
@@ -154,7 +159,7 @@ def summarize_video_and_email(
         if mark_processed: mark_video_processed(video_id) # Mark so we don't check this short again
         return
     
-    if metadata["duration"] and metadata["duration"] > 3600:
+    if metadata["duration"] and metadata["duration"] > 3600 and not allow_long:
         print(f"SKIP: {video_id} is too long ({metadata['duration']}s).")
         if mark_processed: mark_video_processed(video_id) # Mark so we don't check this long video again
         return
@@ -165,7 +170,7 @@ def summarize_video_and_email(
         print(f"ERROR: No transcript for {video_id}")
         return
 
-    summary = safe_summarize(transcript)
+    summary = safe_summarize(transcript, mode=mode)
     if not summary:
         print(f"ERROR: Summarization failed for {video_id}")
         return
