@@ -121,10 +121,11 @@
         <h3>Summarize Video</h3>
         <label>YouTube URL</label>
         <input id="videoUrl" placeholder="https://www.youtube.com/watch?v=...">
-        <label>Summary Mode</label>
-        <select id="summaryMode" style="width:100%;padding:8px;margin-bottom:10px;border-radius:6px;border:none;background:#0b1020;color:white;outline:1px solid #2b3470;">
-            <option value="concise">Concise — condensed single summary</option>
-            <option value="detailed">Detailed — preserves all information</option>
+        <label>Detail Level</label>
+        <select id="detailLevel" style="width:100%;padding:8px;margin-bottom:10px;border-radius:6px;border:none;background:#0b1020;color:white;outline:1px solid #2b3470;">
+            <option value="1">1 — Overview</option>
+            <option value="2" selected>2 — Standard</option>
+            <option value="3">3 — Complete</option>
         </select>
         <button onclick="summarize()">POST /summarize</button>
     </div>
@@ -203,10 +204,10 @@
 
         async function summarize() {
             const url = document.getElementById("videoUrl").value;
-            const mode = document.getElementById("summaryMode").value;
+            const detail = document.getElementById("detailLevel").value;
             const form = new FormData();
             form.append("url", url);
-            form.append("mode", mode);
+            form.append("detail", detail);
 
             const res = await fetch(base() + "/summarize", {
                 method: "POST",
