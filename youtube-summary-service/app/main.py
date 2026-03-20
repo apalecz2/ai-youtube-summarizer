@@ -80,18 +80,18 @@ def api_list_channels(auth=Depends(check_auth)):
 
 # Summary endpoint to send email for given video
 @app.post("/summarize")
-def api_summarize(background_tasks: BackgroundTasks, url: str = Form(...), mode: str = Form("concise"), auth=Depends(check_auth)):
+def api_summarize(background_tasks: BackgroundTasks, url: str = Form(...), detail: int = Form(2), auth=Depends(check_auth)):
     video_id = extract_video_id(url)
     if not video_id:
         raise HTTPException(status_code=400, detail="Invalid YouTube URL")
 
-    if mode not in ("concise", "detailed"):
-        raise HTTPException(status_code=400, detail="Invalid mode. Must be 'concise' or 'detailed'.")
+    if detail not in (1, 2, 3):
+        raise HTTPException(status_code=400, detail="Invalid detail level. Must be 1, 2, or 3.")
 
     # Add the long-running function to the background
-    background_tasks.add_task(summarize_video_and_email, video_id=video_id, video_url=url, allow_long=True, mode=mode)
+    background_tasks.add_task(summarize_video_and_email, video_id=video_id, video_url=url, allow_long=True, detail_level=detail)
 
-    return {"status": "processing", "message": "Summarization started in the background", "video_id": video_id, "mode": mode}
+    return {"status": "processing", "message": "Summarization started in the background", "video_id": video_id, "detail": detail}
 
 @app.post("/poll")
 def api_poll(background_tasks: BackgroundTasks, auth=Depends(check_auth)):
@@ -139,7 +139,7 @@ def summarize_video_and_email(
     channel_name: Optional[str] = None,
     mark_processed: bool = False,
     allow_long: bool = False,
-    mode: str = "concise",
+    detail_level: int = 2,
 ) -> None:
     
     # 1. FETCH METADATA FIRST
@@ -170,7 +170,7 @@ def summarize_video_and_email(
         print(f"ERROR: No transcript for {video_id}")
         return
 
-    summary = safe_summarize(transcript, mode=mode)
+    summary = safe_summarize(transcript, detail=detail_level)
     if not summary:
         print(f"ERROR: Summarization failed for {video_id}")
         return
