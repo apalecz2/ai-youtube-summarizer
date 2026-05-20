@@ -62,6 +62,36 @@ def markdown_to_html(md_text: str) -> str:
         extensions=["extra", "sane_lists"]
     )
 
+def send_error_email(
+    *,
+    subject: str,
+    error_message: str,
+) -> None:
+    msg = EmailMessage()
+    msg["From"] = EMAIL_USERNAME
+    msg["To"] = EMAIL_SENDTO
+    msg["Subject"] = f"YouTube Summary Error: {subject}"
+
+    msg.set_content(
+        f"An error occurred during the YouTube Summary process.\n\n"
+        f"Error Details:\n{error_message}"
+    )
+
+    try:
+        access_token = get_gmail_access_token()
+        if not EMAIL_USERNAME:
+            return
+        auth_string = build_xoauth2_string(EMAIL_USERNAME, access_token)
+
+        with smtplib.SMTP(EMAIL_HOST, EMAIL_PORT, timeout=30) as server:
+            server.starttls()
+            server.docmd("AUTH", "XOAUTH2 " + auth_string)
+            server.send_message(msg)
+
+    except Exception as e:
+        print(f"[EMAIL ERROR] Failed to send error email: {e}")
+        return
+
 # Send email
 def send_summary_email(
     *,

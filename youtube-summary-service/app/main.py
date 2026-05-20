@@ -11,7 +11,7 @@ import time
 from app.db import init_db, add_channel, remove_channel, get_channels, is_video_processed, mark_video_processed
 from app.youtube import extract_video_id, fetch_transcript
 from app.gemini import safe_summarize
-from app.emailer import send_summary_email
+from app.emailer import send_summary_email, send_error_email
 from app.youtube import fetch_video_metadata
 
 # Load environment variables
@@ -101,34 +101,40 @@ def api_poll(background_tasks: BackgroundTasks, auth=Depends(check_auth)):
 def run_poll_in_background():
     channels = get_channels()
     for channel_id in channels:
-        rss_url = f"https://www.youtube.com/feeds/videos.xml?channel_id={channel_id}"
-        feed = feedparser.parse(rss_url)
-        if not feed.entries:
-            continue
+        try:
+            rss_url = f"https://www.youtube.com/feeds/videos.xml?channel_id={channel_id}"
+            feed = feedparser.parse(rss_url)
+            if not feed.entries:
+                continue
 
-        latest = feed.entries[0]
-        
-        video_id = extract_video_id_from_entry(latest)
-        
-        if not video_id or is_video_processed(video_id):
-            continue
+            latest = feed.entries[0]
             
-        video_url = f"https://www.youtube.com/watch?v={video_id}"
-        video_title = getattr(latest, "title", "Unknown Title")
-        channel_name = getattr(latest, "author", "Unknown Channel")
+            video_id = extract_video_id_from_entry(latest)
+            
+            if not video_id or is_video_processed(video_id):
+                continue
+                
+            video_url = f"https://www.youtube.com/watch?v={video_id}"
+            video_title = getattr(latest, "title", "Unknown Title")
+            channel_name = getattr(latest, "author", "Unknown Channel")
 
-        # Run the summarization logic
-        summarize_video_and_email(
-            video_id=video_id,
-            video_url=video_url,
-            video_title=video_title,
-            channel_name=channel_name,
-            mark_processed=True,
-        )
-        
-        # Avoid rate limits for gemini
-        time.sleep(2)
-
+            # Run the summarization logic
+            summarize_video_and_email(
+                video_id=video_id,
+                video_url=video_url,
+                video_title=video_title,
+                channel_name=channel_name,
+                mark_processed=True,
+            )
+            
+            # Avoid rate limits for gemini
+            time.sleep(2)
+        except Exception as e:
+            print(f"Error processing channel {channel_id}: {e}")
+            send_error_email(
+                subject=f"Polling Error for channel {channel_id}",
+                error_message=f"An error occurred while polling channel {channel_id}:\n\n{e}"
+            )
 
 # Abstracted function to not duplicate summarization logic, called by /poll and /summarize (/poll marks them as processed)
 def summarize_video_and_email(
@@ -165,32 +171,53 @@ def summarize_video_and_email(
         return
     
     # 3. PROCEED TO TRANSCRIPT
-    transcript = fetch_transcript(video_id)
-    if not transcript:
-        print(f"ERROR: No transcript for {video_id}")
-        return
+    try:
+        transcript = fetch_transcript(video_id)
+        if not transcript:
+            print(f"ERROR: No transcript for {video_id}")
+            send_error_email(
+                subject=f"Missing Transcript: {video_id}",
+                error_message=f"Could not fetch transcript for video ID: {video_id}\nURL: {video_url}"
+            )
+            return
 
-    summary = safe_summarize(transcript, detail=detail_level)
-    if not summary:
-        print(f"ERROR: Summarization failed for {video_id}")
-        return
-    
-    # Finalize names (prioritize RSS feed data)
-    final_title = video_title or metadata["title"]
-    final_channel = channel_name or metadata["channel"]
+        # Finalize names (prioritize RSS feed data)
+        final_title = video_title or metadata["title"]
+        final_channel = channel_name or metadata["channel"]
 
-    # FIX: Use final_title and final_channel here
-    send_summary_email(
-        video_title=final_title,
-        channel_name=final_channel,
-        summary=summary,
-        youtube_url=video_url,
-    )
+        summary = safe_summarize(
+            transcript, 
+            detail=detail_level, 
+            channel_name=final_channel, 
+            video_title=final_title
+        )
+        if not summary:
+            print(f"ERROR: Summarization failed for {video_id}")
+            send_error_email(
+                subject=f"Summarization Failed: {video_id}",
+                error_message=f"Model failed to generate summary for video ID: {video_id}\nURL: {video_url}"
+            )
+            return
 
-    if mark_processed:
-        mark_video_processed(video_id)
+        # FIX: Use final_title and final_channel here
+        send_summary_email(
+            video_title=final_title,
+            channel_name=final_channel,
+            summary=summary,
+            youtube_url=video_url,
+        )
 
-    print(f"SUCCESS: Summary sent for {video_id}")
+        if mark_processed:
+            mark_video_processed(video_id)
+
+        print(f"SUCCESS: Summary sent for {video_id}")
+
+    except Exception as e:
+        print(f"Unexpected error summarizing {video_id}: {e}")
+        send_error_email(
+            subject=f"Unexpected Error: {video_id}",
+            error_message=f"An unexpected error occurred while processing video ID {video_id}:\n\n{e}\n\nURL: {video_url}"
+        )
 
 
 def extract_video_id_from_entry(entry: Any) -> Optional[str]:

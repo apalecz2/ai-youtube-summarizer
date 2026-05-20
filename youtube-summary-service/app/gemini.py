@@ -12,7 +12,25 @@ if not api_key:
 # Initialize the global client
 client = genai.Client(api_key=api_key)
 
-MODEL_NAME = "gemini-2.5-flash"
+MODELS = [
+    "gemini-3.5-flash",
+    "gemini-3.1-flash-lite-preview",
+    "gemini-2.5-flash",
+]
+
+def _generate_with_fallback(contents: str) -> str:
+    for model_name in MODELS:
+        try:
+            response = client.models.generate_content(
+                model=model_name,
+                contents=contents
+            )
+            return response.text.strip() if response.text else ""
+        except Exception as e:
+            print(f"Model {model_name} failed: {e}")
+            continue
+    raise RuntimeError("All configured models failed to generate content.")
+
 # ~100k tokens at ~4 chars/token = 400k chars
 MAX_SINGLE_PASS_CHARS = 400_000
 CHUNK_SIZE_CHARS = 400_000
@@ -62,32 +80,47 @@ def chunk_text(text: str) -> list[str]:
     return chunks
 
 
-def summarize_chunk(text: str) -> str:
-    prompt = (
+def summarize_chunk(text: str, channel_name: str | None = None, video_title: str | None = None) -> str:
+    instructions = (
         "Summarize the following YouTube transcript chunk thoroughly. "
         "Capture every key point, argument, example, and detail — "
         "do not skip anything.\n\n"
-        f"{text}"
     )
 
-    response = client.models.generate_content(
-        model=MODEL_NAME,
-        contents=prompt
-    )
+    context = ""
+    if channel_name or video_title:
+        context += "Context:\n"
+        if channel_name:
+            context += f"- Channel: {channel_name}\n"
+        if video_title:
+            context += f"- Title: {video_title}\n"
+        context += "\n"
 
-    return response.text.strip() if response.text else ""
+    prompt = instructions + context + text
+
+    return _generate_with_fallback(prompt)
 
 
-def summarize_full_transcript(transcript: str, detail: int = 2) -> str:
-    prompt = DETAIL_PROMPTS[detail]
+def summarize_full_transcript(
+    transcript: str, 
+    detail: int = 2, 
+    channel_name: str | None = None, 
+    video_title: str | None = None
+) -> str:
+    instructions = DETAIL_PROMPTS[detail]
+
+    context = ""
+    if channel_name or video_title:
+        context += "Context:\n"
+        if channel_name:
+            context += f"- Channel: {channel_name}\n"
+        if video_title:
+            context += f"- Title: {video_title}\n"
+        context += "\n"
 
     # If within 100k tokens, summarize in a single pass
     if len(transcript) <= MAX_SINGLE_PASS_CHARS:
-        response = client.models.generate_content(
-            model=MODEL_NAME,
-            contents=prompt + transcript
-        )
-        return response.text.strip() if response.text else ""
+        return _generate_with_fallback(instructions + context + transcript)
 
     # Otherwise, chunk and summarize each piece
     chunks = chunk_text(transcript)
@@ -95,7 +128,7 @@ def summarize_full_transcript(transcript: str, detail: int = 2) -> str:
 
     for chunk in chunks:
         try:
-            summary = summarize_chunk(chunk)
+            summary = summarize_chunk(chunk, channel_name, video_title)
             chunk_summaries.append(summary)
             time.sleep(1)
         except Exception as e:
@@ -105,23 +138,24 @@ def summarize_full_transcript(transcript: str, detail: int = 2) -> str:
     # For standard/complete (levels 2-3), combine with the same detail prompt
     combined = "\n\n".join(chunk_summaries)
 
-    final_prompt = (
+    final_instructions = (
         "You are given summaries of parts of a YouTube video. "
         "Combine them into a single, well-structured summary that "
         "preserves all key points and details.\n\n"
-        f"{combined}"
     )
 
-    response = client.models.generate_content(
-        model=MODEL_NAME,
-        contents=final_prompt
-    )
+    final_prompt = final_instructions + context + combined
 
-    return response.text.strip() if response.text else ""
+    return _generate_with_fallback(final_prompt)
 
-def safe_summarize(transcript: str, detail: int = 2) -> str | None:
+def safe_summarize(
+    transcript: str, 
+    detail: int = 2, 
+    channel_name: str | None = None, 
+    video_title: str | None = None
+) -> str | None:
     try:
-        return summarize_full_transcript(transcript, detail=detail)
+        return summarize_full_transcript(transcript, detail=detail, channel_name=channel_name, video_title=video_title)
     except Exception as e:
         print(f"Summarization failed: {e}")
         return None
