@@ -101,33 +101,36 @@ def api_poll(background_tasks: BackgroundTasks, auth=Depends(check_auth)):
 def run_poll_in_background():
     channels = get_channels()
     for channel_id in channels:
-        rss_url = f"https://www.youtube.com/feeds/videos.xml?channel_id={channel_id}"
-        feed = feedparser.parse(rss_url)
-        if not feed.entries:
-            continue
+        try:
+            rss_url = f"https://www.youtube.com/feeds/videos.xml?channel_id={channel_id}"
+            feed = feedparser.parse(rss_url)
+            if not feed.entries:
+                continue
 
-        latest = feed.entries[0]
-        
-        video_id = extract_video_id_from_entry(latest)
-        
-        if not video_id or is_video_processed(video_id):
-            continue
+            latest = feed.entries[0]
             
-        video_url = f"https://www.youtube.com/watch?v={video_id}"
-        video_title = getattr(latest, "title", "Unknown Title")
-        channel_name = getattr(latest, "author", "Unknown Channel")
+            video_id = extract_video_id_from_entry(latest)
+            
+            if not video_id or is_video_processed(video_id):
+                continue
+                
+            video_url = f"https://www.youtube.com/watch?v={video_id}"
+            video_title = getattr(latest, "title", "Unknown Title")
+            channel_name = getattr(latest, "author", "Unknown Channel")
 
-        # Run the summarization logic
-        summarize_video_and_email(
-            video_id=video_id,
-            video_url=video_url,
-            video_title=video_title,
-            channel_name=channel_name,
-            mark_processed=True,
-        )
-        
-        # Avoid rate limits for gemini
-        time.sleep(2)
+            # Run the summarization logic
+            summarize_video_and_email(
+                video_id=video_id,
+                video_url=video_url,
+                video_title=video_title,
+                channel_name=channel_name,
+                mark_processed=True,
+            )
+            
+            # Avoid rate limits for gemini
+            time.sleep(2)
+        except Exception as e:
+            print(f"Error processing channel {channel_id}: {e}")
 
 
 # Abstracted function to not duplicate summarization logic, called by /poll and /summarize (/poll marks them as processed)
