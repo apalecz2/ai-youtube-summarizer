@@ -165,7 +165,7 @@ def summarize_video_and_email(
         if mark_processed: mark_video_processed(video_id) # Mark so we don't check this short again
         return
     
-    if metadata["duration"] and metadata["duration"] > 3600 and not allow_long:
+    if metadata["duration"] and metadata["duration"] > 18000 and not allow_long:
         print(f"SKIP: {video_id} is too long ({metadata['duration']}s).")
         if mark_processed: mark_video_processed(video_id) # Mark so we don't check this long video again
         return
