@@ -1,0 +1,22 @@
+{
+  "manifest_version": 3,
+  "name": "YouTube Summarizer",
+  "version": "1.0",
+  "description": "Summarize YouTube videos via custom backend service.",
+  "permissions": [
+    "activeTab",
+    "storage",
+    "contextMenus"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Summarize YouTube Video"
+  },
+  "options_page": "options.html",
+  "background": {
+    "service_worker": "background.js"
+  }
+}
