@@ -35,4 +35,9 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
     });
+
+    // Add Manage Channels button logic
+    document.getElementById('channelsBtn').addEventListener('click', () => {
+        chrome.tabs.create({ url: chrome.runtime.getURL('channels.html') });
+    });
 });
