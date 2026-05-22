@@ -179,6 +179,8 @@ def summarize_video_and_email(
                 subject=f"Missing Transcript: {video_id}",
                 error_message=f"Could not fetch transcript for video ID: {video_id}\nURL: {video_url}"
             )
+            if mark_processed:
+                mark_video_processed(video_id)
             return
 
         # Finalize names (prioritize RSS feed data)
@@ -197,6 +199,8 @@ def summarize_video_and_email(
                 subject=f"Summarization Failed: {video_id}",
                 error_message=f"Model failed to generate summary for video ID: {video_id}\nURL: {video_url}"
             )
+            if mark_processed:
+                mark_video_processed(video_id)
             return
 
         # FIX: Use final_title and final_channel here
@@ -218,6 +222,8 @@ def summarize_video_and_email(
             subject=f"Unexpected Error: {video_id}",
             error_message=f"An unexpected error occurred while processing video ID {video_id}:\n\n{e}\n\nURL: {video_url}"
         )
+        if mark_processed:
+            mark_video_processed(video_id)
 
 
 def extract_video_id_from_entry(entry: Any) -> Optional[str]:
