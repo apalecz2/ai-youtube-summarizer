@@ -1,6 +1,12 @@
 document.addEventListener('DOMContentLoaded', () => {
     loadChannels();
 
+    // Open the extension's options page so the API URL/key can be configured
+    // (useful when channel loading fails because settings are missing).
+    document.getElementById('settingsBtn').addEventListener('click', () => {
+        chrome.runtime.openOptionsPage();
+    });
+
     document.getElementById('addBtn').addEventListener('click', async () => {
         const inputVal = document.getElementById('newChannelId').value.trim();
         if (inputVal) {
@@ -162,7 +168,7 @@ function renderFilterPanel(channelId, panel) {
             const empty = document.createElement('li');
             empty.style.fontSize = '13px';
             empty.style.color = '#666';
-            empty.textContent = 'No filters — all videos pass.';
+            empty.textContent = 'No filters -- all videos pass.';
             list.appendChild(empty);
         } else {
             for (const rule of rules) {

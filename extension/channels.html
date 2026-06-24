@@ -4,7 +4,10 @@
   <title>Manage YouTube Channels</title>
   <style>
     body { font-family: sans-serif; padding: 20px; max-width: 540px; margin: auto; }
-    h2 { border-bottom: 1px solid #ccc; padding-bottom: 5px; margin-top: 0; }
+    .page-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #ccc; padding-bottom: 5px; margin-bottom: 5px; }
+    h2 { border-bottom: none; padding-bottom: 0; margin: 0; }
+    .settings-btn { background: none; border: 1px solid #ccc; color: #555; padding: 5px 10px; cursor: pointer; border-radius: 4px; font-size: 13px; }
+    .settings-btn:hover { background: #f0f0f0; }
     .channel-list { list-style: none; padding: 0; margin-top: 20px; }
     .channel-item { padding: 10px; border-bottom: 1px solid #eee; }
     .channel-row { display: flex; justify-content: space-between; align-items: center; }
@@ -40,7 +43,10 @@
   </style>
 </head>
 <body>
-  <h2>Manage Polled Channels</h2>
+  <div class="page-header">
+    <h2>Manage Polled Channels</h2>
+    <button id="settingsBtn" class="settings-btn">Settings</button>
+  </div>
   <div class="add-channel">
     <input type="text" id="newChannelId" placeholder="Enter Channel ID (UC...) or Link" />
     <button id="addBtn" class="add-btn">Add Channel</button>

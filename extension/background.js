@@ -27,6 +27,13 @@ chrome.runtime.onInstalled.addListener(() => {
         title: "Add Channel to Summarizer",
         contexts: ["link"]
     });
+    // Right-click the extension's toolbar icon to reach the management page
+    // from anywhere, without first opening the popup.
+    chrome.contextMenus.create({
+        id: "manageChannels",
+        title: "Manage Channels",
+        contexts: ["action"]
+    });
 });
 
 chrome.contextMenus.onClicked.addListener((info, tab) => {
@@ -43,6 +50,8 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
                 }
             });
         }
+    } else if (info.menuItemId === "manageChannels") {
+        chrome.tabs.create({ url: chrome.runtime.getURL('channels.html') });
     } else if (info.menuItemId === "addChannelMenu") {
         const linkUrl = info.linkUrl;
         if (linkUrl && linkUrl.includes("youtube.com")) {
