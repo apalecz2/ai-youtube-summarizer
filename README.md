@@ -205,7 +205,41 @@ List all monitored channels.
 ```
 
 #### `DELETE /channels/{channel_id}`
-Remove a channel from monitoring.
+Remove a channel from monitoring (also removes its filter rules).
+
+#### `GET /channels/{channel_id}/filters`
+List a channel's filter rules.
+
+**Response:**
+```json
+{
+  "channel_id": "UC_x5XG1O",
+  "filters": [
+    { "id": 1, "channel_id": "UC_x5XG1O", "field": "title", "match_type": "contains", "value": "AI", "action": "include" }
+  ]
+}
+```
+
+#### `POST /channels/{channel_id}/filters`
+Add a filter rule to a channel. With one or more `include` rules, only videos
+whose title matches at least one are summarized; any `exclude` match is dropped.
+A channel with no rules summarizes every video.
+
+**Request:**
+```bash
+# Only summarize this channel's videos whose title contains "AI"
+curl -X POST http://localhost:8000/channels/UC_x5XG1O/filters \
+  -H "X-API-Key: your-token" \
+  -F "value=AI" \
+  -F "action=include"
+```
+
+Form fields: `value` (required), `field` (default `title`), `match_type`
+(default `contains`, case-insensitive substring), `action` (`include` or
+`exclude`, default `include`).
+
+#### `DELETE /channels/filters/{filter_id}`
+Remove a single filter rule by its id.
 
 #### `POST /summarize`
 Manually trigger summarization for a specific video URL.

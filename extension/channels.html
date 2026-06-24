@@ -3,20 +3,40 @@
 <head>
   <title>Manage YouTube Channels</title>
   <style>
-    body { font-family: sans-serif; padding: 20px; max-width: 500px; margin: auto; }
+    body { font-family: sans-serif; padding: 20px; max-width: 540px; margin: auto; }
     h2 { border-bottom: 1px solid #ccc; padding-bottom: 5px; margin-top: 0; }
     .channel-list { list-style: none; padding: 0; margin-top: 20px; }
-    .channel-item { display: flex; justify-content: space-between; align-items: center; padding: 10px; border-bottom: 1px solid #eee; }
+    .channel-item { padding: 10px; border-bottom: 1px solid #eee; }
+    .channel-row { display: flex; justify-content: space-between; align-items: center; }
     .channel-info { display: flex; flex-direction: column; overflow: hidden; margin-right: 10px;}
     .channel-name { font-weight: bold; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;}
     .channel-id { font-size: 12px; color: #666; }
+    .channel-buttons { display: flex; gap: 6px; flex-shrink: 0; }
     .delete-btn { background-color: #dc3545; color: white; border: none; padding: 5px 10px; cursor: pointer; border-radius: 4px; }
     .delete-btn:hover { background-color: #c82333; }
+    .filters-btn { background-color: #6c757d; color: white; border: none; padding: 5px 10px; cursor: pointer; border-radius: 4px; }
+    .filters-btn:hover { background-color: #5a6268; }
     .add-channel { margin-top: 20px; display: flex; gap: 10px; }
     .add-channel input { flex: 1; padding: 8px; border: 1px solid #ccc; border-radius: 4px; }
     .add-btn { background-color: #28a745; color: white; border: none; padding: 8px 15px; cursor: pointer; border-radius: 4px; }
     .add-btn:hover { background-color: #218838; }
     #status { margin-top: 10px; font-size: 14px; min-height: 20px; }
+
+    /* Per-channel filter panel */
+    .filters-panel { margin-top: 10px; padding: 10px; background: #f8f9fa; border: 1px solid #e3e6ea; border-radius: 4px; }
+    .filters-panel.hidden { display: none; }
+    .filters-hint { font-size: 12px; color: #666; margin: 0 0 8px; }
+    .filter-list { list-style: none; padding: 0; margin: 0 0 10px; }
+    .filter-rule { display: flex; justify-content: space-between; align-items: center; padding: 4px 0; font-size: 13px; }
+    .filter-rule .tag { font-weight: bold; text-transform: uppercase; font-size: 11px; padding: 1px 6px; border-radius: 3px; margin-right: 6px; color: #fff; }
+    .filter-rule .tag.include { background: #28a745; }
+    .filter-rule .tag.exclude { background: #dc3545; }
+    .filter-remove { background: none; border: none; color: #dc3545; cursor: pointer; font-size: 16px; line-height: 1; }
+    .add-filter { display: flex; gap: 6px; align-items: center; }
+    .add-filter select, .add-filter input { padding: 6px; border: 1px solid #ccc; border-radius: 4px; }
+    .add-filter input { flex: 1; }
+    .add-filter button { background-color: #007bff; color: white; border: none; padding: 6px 10px; cursor: pointer; border-radius: 4px; }
+    .add-filter button:hover { background-color: #0069d9; }
   </style>
 </head>
 <body>

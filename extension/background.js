@@ -79,6 +79,20 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             }
         });
         return true;
+    } else if (request.action === 'getFilters') {
+        apiCall(`/channels/${request.channelId}/filters`, 'GET', null).then(sendResponse);
+        return true;
+    } else if (request.action === 'addFilter') {
+        apiCall(`/channels/${request.channelId}/filters`, 'POST', {
+            value: request.value,
+            field: request.field || 'title',
+            match_type: request.matchType || 'contains',
+            action: request.filterAction || 'include',
+        }).then(sendResponse);
+        return true;
+    } else if (request.action === 'removeFilter') {
+        apiCall(`/channels/filters/${request.filterId}`, 'DELETE', null).then(sendResponse);
+        return true;
     }
 });
 

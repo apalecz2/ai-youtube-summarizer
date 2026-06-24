@@ -8,11 +8,16 @@ from typing import Any, Optional
 import feedparser
 import time
 
-from app.db import init_db, add_channel, remove_channel, get_channels, is_video_processed, mark_video_processed
+from app.db import (
+    init_db, add_channel, remove_channel, get_channels,
+    is_video_processed, mark_video_processed,
+    add_channel_filter, remove_channel_filter, get_channel_filters,
+)
 from app.youtube import extract_video_id, fetch_transcript
 from app.gemini import safe_summarize
 from app.emailer import send_summary_email, send_error_email
 from app.youtube import fetch_video_metadata
+from app.filters import passes_filters, VALID_FIELDS, VALID_MATCH_TYPES, VALID_ACTIONS
 
 # Load environment variables
 load_dotenv()
@@ -78,6 +83,49 @@ def api_list_channels(auth=Depends(check_auth)):
     channels = get_channels()
     return {"channels": channels}
 
+# List a channel's filter rules
+@app.get("/channels/{channel_id}/filters")
+def api_list_channel_filters(channel_id: str, auth=Depends(check_auth)):
+    return {"channel_id": channel_id, "filters": get_channel_filters(channel_id)}
+
+# Add a filter rule to a channel
+@app.post("/channels/{channel_id}/filters")
+def api_add_channel_filter(
+    channel_id: str,
+    value: str = Form(...),
+    field: str = Form("title"),
+    match_type: str = Form("contains"),
+    action: str = Form("include"),
+    auth=Depends(check_auth),
+):
+    if not value.strip():
+        raise HTTPException(status_code=400, detail="Filter value cannot be empty.")
+    if field not in VALID_FIELDS:
+        raise HTTPException(status_code=400, detail=f"Invalid field. Must be one of {VALID_FIELDS}.")
+    if match_type not in VALID_MATCH_TYPES:
+        raise HTTPException(status_code=400, detail=f"Invalid match_type. Must be one of {VALID_MATCH_TYPES}.")
+    if action not in VALID_ACTIONS:
+        raise HTTPException(status_code=400, detail=f"Invalid action. Must be one of {VALID_ACTIONS}.")
+
+    filter_id = add_channel_filter(channel_id, value.strip(), field, match_type, action)
+    return {
+        "status": "filter added",
+        "filter": {
+            "id": filter_id,
+            "channel_id": channel_id,
+            "field": field,
+            "match_type": match_type,
+            "value": value.strip(),
+            "action": action,
+        },
+    }
+
+# Remove a filter rule by id
+@app.delete("/channels/filters/{filter_id}")
+def api_remove_channel_filter(filter_id: int, auth=Depends(check_auth)):
+    remove_channel_filter(filter_id)
+    return {"status": "filter removed", "filter_id": filter_id}
+
 # Summary endpoint to send email for given video
 @app.post("/summarize")
 def api_summarize(background_tasks: BackgroundTasks, url: str = Form(...), detail: int = Form(2), auth=Depends(check_auth)):
@@ -107,28 +155,42 @@ def run_poll_in_background():
             if not feed.entries:
                 continue
 
-            latest = feed.entries[0]
-            
-            video_id = extract_video_id_from_entry(latest)
-            
-            if not video_id or is_video_processed(video_id):
-                continue
-                
-            video_url = f"https://www.youtube.com/watch?v={video_id}"
-            video_title = getattr(latest, "title", "Unknown Title")
-            channel_name = getattr(latest, "author", "Unknown Channel")
+            # Fetch this channel's filter rules once, then walk every entry in the
+            # feed (typically the ~15 most recent uploads). The feed is newest-first,
+            # so process it reversed to handle a burst of uploads in chronological
+            # order. This ensures we don't miss videos when a channel posts several
+            # between polls.
+            rules = get_channel_filters(channel_id)
 
-            # Run the summarization logic
-            summarize_video_and_email(
-                video_id=video_id,
-                video_url=video_url,
-                video_title=video_title,
-                channel_name=channel_name,
-                mark_processed=True,
-            )
-            
-            # Avoid rate limits for gemini
-            time.sleep(2)
+            for entry in reversed(feed.entries):
+                video_id = extract_video_id_from_entry(entry)
+
+                if not video_id or is_video_processed(video_id):
+                    continue
+
+                video_url = f"https://www.youtube.com/watch?v={video_id}"
+                video_title = getattr(entry, "title", "Unknown Title")
+                channel_name = getattr(entry, "author", "Unknown Channel")
+
+                # Apply per-channel filter rules against the (cheap) RSS title before
+                # doing any metadata/transcript work. Mark as processed so we don't
+                # re-evaluate the same filtered-out video on every poll.
+                if not passes_filters(rules, {"title": video_title}):
+                    print(f"SKIP: {video_id} '{video_title}' did not pass filters for channel {channel_id}.")
+                    mark_video_processed(video_id)
+                    continue
+
+                # Run the summarization logic
+                summarize_video_and_email(
+                    video_id=video_id,
+                    video_url=video_url,
+                    video_title=video_title,
+                    channel_name=channel_name,
+                    mark_processed=True,
+                )
+
+                # Avoid rate limits for gemini
+                time.sleep(2)
         except Exception as e:
             print(f"Error processing channel {channel_id}: {e}")
             send_error_email(

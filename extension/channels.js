@@ -49,11 +49,14 @@ function loadChannels() {
             for (const channelId of response.data.channels) {
                 const li = document.createElement('li');
                 li.className = 'channel-item';
-                
+
+                const row = document.createElement('div');
+                row.className = 'channel-row';
+
                 const nameSpan = document.createElement('span');
                 nameSpan.className = 'channel-name';
                 nameSpan.textContent = "Loading...";
-                
+
                 const idSpan = document.createElement('span');
                 idSpan.className = 'channel-id';
                 idSpan.textContent = channelId;
@@ -63,13 +66,30 @@ function loadChannels() {
                 infoDiv.appendChild(nameSpan);
                 infoDiv.appendChild(idSpan);
 
+                const buttonsDiv = document.createElement('div');
+                buttonsDiv.className = 'channel-buttons';
+
+                const filtersPanel = document.createElement('div');
+                filtersPanel.className = 'filters-panel hidden';
+
+                const filtersBtn = document.createElement('button');
+                filtersBtn.className = 'filters-btn';
+                filtersBtn.textContent = 'Filters';
+                filtersBtn.onclick = () => toggleFilters(channelId, filtersPanel, filtersBtn);
+
                 const deleteBtn = document.createElement('button');
                 deleteBtn.className = 'delete-btn';
                 deleteBtn.textContent = 'Remove';
                 deleteBtn.onclick = () => removeChannel(channelId);
 
-                li.appendChild(infoDiv);
-                li.appendChild(deleteBtn);
+                buttonsDiv.appendChild(filtersBtn);
+                buttonsDiv.appendChild(deleteBtn);
+
+                row.appendChild(infoDiv);
+                row.appendChild(buttonsDiv);
+
+                li.appendChild(row);
+                li.appendChild(filtersPanel);
                 list.appendChild(li);
 
                 // Fetch the name asynchronously
@@ -110,4 +130,120 @@ function removeChannel(channelId) {
             }
         });
     }
+}
+
+function toggleFilters(channelId, panel, btn) {
+    if (!panel.classList.contains('hidden')) {
+        panel.classList.add('hidden');
+        btn.textContent = 'Filters';
+        return;
+    }
+    btn.textContent = 'Hide';
+    panel.classList.remove('hidden');
+    renderFilterPanel(channelId, panel);
+}
+
+function renderFilterPanel(channelId, panel) {
+    panel.innerHTML = '<p class="filters-hint">Loading filters...</p>';
+
+    chrome.runtime.sendMessage({ action: 'getFilters', channelId }, (response) => {
+        panel.innerHTML = '';
+
+        const hint = document.createElement('p');
+        hint.className = 'filters-hint';
+        hint.textContent = 'With no rules, every video is summarized. Add an "include" rule and only matching videos are sent; "exclude" rules drop matching videos.';
+        panel.appendChild(hint);
+
+        const rules = (response && response.success && response.data && response.data.filters) || [];
+
+        const list = document.createElement('ul');
+        list.className = 'filter-list';
+        if (rules.length === 0) {
+            const empty = document.createElement('li');
+            empty.style.fontSize = '13px';
+            empty.style.color = '#666';
+            empty.textContent = 'No filters — all videos pass.';
+            list.appendChild(empty);
+        } else {
+            for (const rule of rules) {
+                const item = document.createElement('li');
+                item.className = 'filter-rule';
+
+                const label = document.createElement('span');
+                const tag = document.createElement('span');
+                tag.className = 'tag ' + rule.action;
+                tag.textContent = rule.action;
+                label.appendChild(tag);
+                label.appendChild(document.createTextNode(`${rule.field} ${rule.match_type} "${rule.value}"`));
+
+                const removeBtn = document.createElement('button');
+                removeBtn.className = 'filter-remove';
+                removeBtn.textContent = '×';
+                removeBtn.title = 'Remove rule';
+                removeBtn.onclick = () => removeFilter(rule.id, channelId, panel);
+
+                item.appendChild(label);
+                item.appendChild(removeBtn);
+                list.appendChild(item);
+            }
+        }
+        panel.appendChild(list);
+
+        // Add-rule form
+        const form = document.createElement('div');
+        form.className = 'add-filter';
+
+        const actionSelect = document.createElement('select');
+        for (const opt of ['include', 'exclude']) {
+            const o = document.createElement('option');
+            o.value = opt;
+            o.textContent = opt;
+            actionSelect.appendChild(o);
+        }
+
+        const valueInput = document.createElement('input');
+        valueInput.type = 'text';
+        valueInput.placeholder = 'word or phrase in title';
+
+        const addBtn = document.createElement('button');
+        addBtn.textContent = 'Add';
+        const submit = () => {
+            const value = valueInput.value.trim();
+            if (!value) return;
+            addBtn.disabled = true;
+            chrome.runtime.sendMessage({
+                action: 'addFilter',
+                channelId,
+                value,
+                field: 'title',
+                matchType: 'contains',
+                filterAction: actionSelect.value,
+            }, (resp) => {
+                addBtn.disabled = false;
+                if (resp && resp.success) {
+                    valueInput.value = '';
+                    renderFilterPanel(channelId, panel);
+                } else {
+                    showStatus('Failed to add filter: ' + (resp ? resp.error : 'Unknown'), true);
+                }
+            });
+        };
+        addBtn.onclick = submit;
+        valueInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') submit(); });
+
+        form.appendChild(actionSelect);
+        form.appendChild(valueInput);
+        form.appendChild(addBtn);
+        panel.appendChild(form);
+    });
+}
+
+function removeFilter(filterId, channelId, panel) {
+    chrome.runtime.sendMessage({ action: 'removeFilter', filterId }, (response) => {
+        if (response && response.success) {
+            renderFilterPanel(channelId, panel);
+        } else {
+            showStatus('Failed to remove filter: ' + (response ? response.error : 'Unknown'), true);
+        }
+    });
 }
