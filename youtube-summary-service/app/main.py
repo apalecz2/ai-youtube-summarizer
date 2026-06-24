@@ -7,6 +7,7 @@ import sys
 from typing import Any, Optional
 import feedparser
 import time
+import threading
 
 from app.db import (
     init_db, add_channel, remove_channel, get_channels,
@@ -146,7 +147,22 @@ def api_poll(background_tasks: BackgroundTasks, auth=Depends(check_auth)):
     background_tasks.add_task(run_poll_in_background)
     return {"status": "polling_started", "message": "Checking channels for new videos in background."}
 
+# Guards against overlapping polls. A poll now walks every feed entry per channel
+# and can run for minutes, so a second /poll (cron, uptime monitor, manual retry)
+# firing mid-run would re-read the same not-yet-marked videos and email duplicates.
+_poll_lock = threading.Lock()
+
 def run_poll_in_background():
+    # Non-blocking: if a poll is already running, skip rather than queue a duplicate.
+    if not _poll_lock.acquire(blocking=False):
+        print("SKIP: poll already in progress; ignoring this trigger.")
+        return
+    try:
+        _run_poll()
+    finally:
+        _poll_lock.release()
+
+def _run_poll():
     channels = get_channels()
     for channel_id in channels:
         try:
