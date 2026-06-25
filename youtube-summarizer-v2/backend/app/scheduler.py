@@ -5,6 +5,8 @@ drains the resulting jobs over time. This means the app is self-contained — no
 home-server-scheduler needed — though `POST /poll` still triggers discovery on
 demand.
 """
+from datetime import datetime, timedelta
+
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from app.config import POLL_INTERVAL_MINUTES
@@ -34,7 +36,10 @@ def start() -> None:
         id="discovery",
         max_instances=1,        # never overlap discovery runs
         coalesce=True,
-        next_run_time=None,     # first run after one interval; use /poll for immediate
+        # Run the first scan shortly after startup, then every interval. NOTE:
+        # APScheduler treats next_run_time=None as "add the job PAUSED" (it never
+        # fires), so we must pass a real datetime here.
+        next_run_time=datetime.now() + timedelta(seconds=10),
     )
     _scheduler.start()
     print(f"[scheduler] discovery every {POLL_INTERVAL_MINUTES} min")
