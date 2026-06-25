@@ -1,0 +1,14 @@
+# Secrets + local data — never commit these.
+.env
+data/
+*.db
+*.db-wal
+*.db-shm
+cookies.txt
+
+# Python
+__pycache__/
+*.pyc
+venv/
+.venv/
+frontend_dist/

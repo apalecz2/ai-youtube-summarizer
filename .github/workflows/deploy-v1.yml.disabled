@@ -1,3 +1,10 @@
+# ───────────────────────────────────────────────────────────────────────────
+# ARCHIVED / DISABLED — this is the original v1 deploy (youtube-summary-service).
+# It is intentionally NOT run: GitHub Actions only picks up files ending in
+# .yml/.yaml directly under .github/workflows, and this file ends in .disabled.
+# Kept for reference. To re-enable, rename back to a *.yml filename.
+# The active deployment is .github/workflows/deploy.yml (deploys v2).
+# ───────────────────────────────────────────────────────────────────────────
 name: Deploy to Debian Mini PC
 
 on:
@@ -53,7 +60,7 @@ jobs:
         run: |
           ssh debianMiniPC << 'EOF'
             set -e
-            cd ~/docker/ai-youtube-summarizer/youtube-summarizer-v2
+            cd ~/docker/ai-youtube-summarizer/youtube-summary-service
             git pull
             docker compose up -d --build
           EOF

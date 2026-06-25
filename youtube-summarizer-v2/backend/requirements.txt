@@ -1,0 +1,11 @@
+fastapi
+uvicorn[standard]
+python-dotenv
+feedparser
+google-genai
+requests
+python-multipart
+markdown
+yt-dlp
+apscheduler
+itsdangerous

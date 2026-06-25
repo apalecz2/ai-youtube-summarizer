@@ -1,0 +1,25 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: youtube-summarizer-v2
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    env_file:
+      - backend/.env
+    environment:
+      - PYTHONUNBUFFERED=1
+      # DB + cookies live under /app/data, persisted by the volume below.
+      - DATA_DIR=data
+      - YTDLP_COOKIES_FILE=data/cookies.txt
+    volumes:
+      # Persist the SQLite DB and the throwaway-account cookies.txt across restarts.
+      - ./backend/data:/app/data
+
+  # Optional: expose securely with a Cloudflare tunnel (same pattern as v1).
+  # tunnel:
+  #   image: cloudflare/cloudflared:latest
+  #   restart: unless-stopped
+  #   command: tunnel --no-autoupdate run --token ${CLOUDFLARE_TUNNEL_TOKEN}
