@@ -44,3 +44,14 @@ async def stop() -> None:
     if _scheduler:
         _scheduler.shutdown(wait=False)
     await worker.stop()
+
+
+def next_poll_at() -> int | None:
+    """Epoch seconds of the next scheduled discovery run, or None if the
+    scheduler isn't running yet."""
+    if _scheduler is None:
+        return None
+    job = _scheduler.get_job("discovery")
+    if job is None or job.next_run_time is None:
+        return None
+    return int(job.next_run_time.timestamp())

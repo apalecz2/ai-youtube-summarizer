@@ -5,6 +5,8 @@ import time
 
 from fastapi import APIRouter, Depends, Form, HTTPException
 
+from app import scheduler
+from app.config import POLL_INTERVAL_MINUTES
 from app.db import repos
 from app.discovery import run_discovery
 from app.security import require_auth
@@ -83,4 +85,28 @@ async def poll():
 
 @router.get("/status")
 def status():
-    return {"queue": repos.job_queue_stats(), "backoff": gate.status()}
+    """Queue + backoff plus the upcoming schedule: when the next channel scan
+    runs and when each queued video is due to be processed."""
+    now = int(time.time())
+    next_poll = scheduler.next_poll_at()
+    upcoming = [
+        {
+            "video_id": j["video_id"],
+            "title": j["title"],
+            "channel_name": j["channel_name"],
+            "url": j["url"],
+            "scheduled_at": j["scheduled_at"],
+            "due_in_seconds": j["scheduled_at"] - now,
+            "priority": j["priority"],
+        }
+        for j in repos.upcoming_jobs()
+    ]
+    return {
+        "now": now,
+        "queue": repos.job_queue_stats(),
+        "backoff": gate.status(),
+        "poll_interval_minutes": POLL_INTERVAL_MINUTES,
+        "next_poll_at": next_poll,
+        "next_poll_in_seconds": (next_poll - now) if next_poll is not None else None,
+        "upcoming": upcoming,
+    }

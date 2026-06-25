@@ -99,7 +99,22 @@ export interface BackoffStatus {
   recently_blocked: boolean;
 }
 
+export interface UpcomingJob {
+  video_id: string;
+  title: string | null;
+  channel_name: string | null;
+  url: string | null;
+  scheduled_at: number;
+  due_in_seconds: number;
+  priority: number;
+}
+
 export interface SystemStatus {
+  now: number;
   queue: Record<string, number>;
   backoff: BackoffStatus;
+  poll_interval_minutes: number;
+  next_poll_at: number | null;
+  next_poll_in_seconds: number | null;
+  upcoming: UpcomingJob[];
 }

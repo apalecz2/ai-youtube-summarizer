@@ -353,6 +353,24 @@ def has_pending_job(video_id: str) -> bool:
         ).fetchone() is not None
 
 
+def upcoming_jobs(limit: int = 100) -> list[dict]:
+    """Pending jobs joined with their video info, in the order the worker will
+    claim them (highest priority first, then earliest scheduled). Used to show
+    when each video is expected to be processed."""
+    with db() as conn:
+        rows = conn.execute(
+            """SELECT j.id, j.video_id, j.scheduled_at, j.priority, j.attempts,
+                      v.title, v.channel_name, v.url
+               FROM fetch_jobs j
+               LEFT JOIN videos v ON v.video_id = j.video_id
+               WHERE j.status = 'pending'
+               ORDER BY j.priority DESC, j.scheduled_at ASC
+               LIMIT ?""",
+            (limit,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
 def job_queue_stats() -> dict[str, int]:
     with db() as conn:
         rows = conn.execute("SELECT status, COUNT(*) AS n FROM fetch_jobs GROUP BY status").fetchall()
