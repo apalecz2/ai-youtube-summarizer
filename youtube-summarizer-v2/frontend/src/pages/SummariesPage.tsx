@@ -12,12 +12,17 @@ export default function SummariesPage() {
   const [detail, setDetail] = useState(2);
   const [msg, setMsg] = useState("");
 
-  const load = () => {
-    setLoading(true);
-    api.listSummaries().then((r) => setItems(r.summaries)).finally(() => setLoading(false));
+  // Silent refresh — keeps Recent summaries / failures live as the backend
+  // processes the queue, without flashing the "Loading…" state each time.
+  const refresh = () => {
+    api.listSummaries().then((r) => setItems(r.summaries)).catch(() => {}).finally(() => setLoading(false));
     api.listVideos("failed").then((r) => setFailures(r.videos)).catch(() => setFailures([]));
   };
-  useEffect(load, []);
+  useEffect(() => {
+    refresh();
+    const t = setInterval(refresh, 15000);
+    return () => clearInterval(t);
+  }, []);
 
   async function summarize(e: React.FormEvent) {
     e.preventDefault();

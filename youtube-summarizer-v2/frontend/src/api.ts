@@ -73,6 +73,7 @@ export const api = {
   summarize: (url: string, detail = 2) => req("/summarize", form({ url, detail: String(detail) })),
   poll: () => req<{ status: string; new: number }>("/poll", { method: "POST" }),
   status: () => req<SystemStatus>("/status"),
+  cancelQueued: (id: string) => req<{ status: string; video_id: string }>(`/queue/${id}`, { method: "DELETE" }),
 
   // ── Reconcile failures ──
   retryVideo: (id: string) => req<{ status: string; enqueued: boolean }>(`/videos/${id}/retry`, { method: "POST" }),

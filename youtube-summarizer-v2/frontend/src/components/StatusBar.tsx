@@ -40,6 +40,18 @@ export default function StatusBar() {
     }
   }
 
+  async function removeJob(videoId: string) {
+    // Optimistically drop it so the UI feels instant; the next poll reconciles.
+    setS((prev) =>
+      prev ? { ...prev, upcoming: prev.upcoming.filter((u) => u.video_id !== videoId) } : prev,
+    );
+    try {
+      await api.cancelQueued(videoId);
+    } finally {
+      load();
+    }
+  }
+
   if (!s) return null;
 
   const q = s.queue;
@@ -107,6 +119,13 @@ export default function StatusBar() {
                     {j.channel_name ? <span className="muted"> · {j.channel_name}</span> : null}
                     {j.priority > 0 ? <span className="pill" style={{ marginLeft: 6 }}>priority</span> : null}
                   </span>
+                  <button
+                    className="schedule-remove"
+                    title="Remove this video from the queue"
+                    onClick={() => removeJob(j.video_id)}
+                  >
+                    ✕
+                  </button>
                 </li>
               ))}
             </ul>

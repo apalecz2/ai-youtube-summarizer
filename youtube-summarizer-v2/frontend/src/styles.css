@@ -115,6 +115,13 @@ header.topbar .spacer { flex: 1; }
   flex: 0 0 96px; color: var(--muted); font-variant-numeric: tabular-nums;
 }
 .schedule-list .what { flex: 1; min-width: 0; }
+.schedule-remove {
+  flex: 0 0 auto; cursor: pointer; line-height: 1;
+  font-size: 12px; padding: 2px 7px; border-radius: 6px;
+  background: transparent; color: var(--muted);
+  border: 1px solid var(--border);
+}
+.schedule-remove:hover { color: var(--accent); border-color: var(--accent); }
 
 .summary-md { line-height: 1.6; }
 .summary-md h1, .summary-md h2, .summary-md h3 { margin-top: 1.2em; }

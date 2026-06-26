@@ -76,6 +76,18 @@ def dismiss_failures():
     return {"status": "dismissed", "count": repos.dismiss_failed()}
 
 
+@router.delete("/queue/{video_id}")
+def cancel_queued(video_id: str):
+    """Remove a pending video from the processing queue. A job that's already
+    running can't be cancelled mid-fetch."""
+    if not repos.cancel_pending_job(video_id):
+        raise HTTPException(
+            status_code=404,
+            detail="No pending job to remove (it may already be processing or done).",
+        )
+    return {"status": "removed", "video_id": video_id}
+
+
 @router.post("/poll")
 async def poll():
     """Trigger discovery immediately (v1-compatible). Fetches still spread out."""

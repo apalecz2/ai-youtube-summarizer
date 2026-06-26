@@ -371,6 +371,27 @@ def upcoming_jobs(limit: int = 100) -> list[dict]:
         return [dict(r) for r in rows]
 
 
+def cancel_pending_job(video_id: str) -> bool:
+    """Remove a video's pending job(s) from the queue and mark the video
+    'cancelled'. Deliberately does NOT touch a job already 'running' in the
+    worker (it's mid-fetch in a thread). Returns True if a pending job was
+    removed. The video row stays, so discovery won't re-queue it on the next
+    scan — use 'Summarize now' to re-queue it intentionally."""
+    with db() as conn:
+        cur = conn.execute(
+            "DELETE FROM fetch_jobs WHERE video_id = ? AND status = 'pending'",
+            (video_id,),
+        )
+        if cur.rowcount == 0:
+            return False
+        conn.execute(
+            "UPDATE videos SET status='cancelled', skip_reason='removed from queue', "
+            "updated_at=strftime('%s','now') WHERE video_id = ?",
+            (video_id,),
+        )
+        return True
+
+
 def job_queue_stats() -> dict[str, int]:
     with db() as conn:
         rows = conn.execute("SELECT status, COUNT(*) AS n FROM fetch_jobs GROUP BY status").fetchall()
