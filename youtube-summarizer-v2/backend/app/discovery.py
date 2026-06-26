@@ -32,6 +32,20 @@ def _published_epoch(entry: Any) -> Optional[int]:
     return timegm(pp) if pp else None
 
 
+def fetch_channel_name(channel_id: str) -> Optional[str]:
+    """Resolve a channel's display name from its RSS feed — plain HTTP, not
+    bot-flagged (same endpoint discovery uses). Lets a freshly added channel
+    show its name immediately, before any uploads have been discovered."""
+    try:
+        feed = feedparser.parse(f"https://www.youtube.com/feeds/videos.xml?channel_id={channel_id}")
+    except Exception:  # noqa: BLE001 - network/parse hiccup shouldn't block adding
+        return None
+    name = getattr(getattr(feed, "feed", None), "title", None)
+    if not name and feed.entries:
+        name = getattr(feed.entries[0], "author", None)
+    return name or None
+
+
 def run_discovery() -> dict:
     """Scan all active channels once. Returns a small stats dict for logging/UI."""
     now = int(time.time())

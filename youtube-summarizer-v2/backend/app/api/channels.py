@@ -2,6 +2,7 @@
 extension keeps working)."""
 from fastapi import APIRouter, Depends, Form, HTTPException
 
+from app import discovery
 from app.db import repos
 from app.filters import VALID_ACTIONS, VALID_FIELDS, VALID_MATCH_TYPES
 from app.security import require_auth
@@ -11,8 +12,11 @@ router = APIRouter(tags=["channels"], dependencies=[Depends(require_auth)])
 
 @router.post("/channels")
 def add_channel(channel_id: str = Form(...), title: str | None = Form(None)):
-    repos.add_channel(channel_id, title)
-    return {"status": "channel added", "channel_id": channel_id}
+    # Resolve the display name from the RSS feed so the channel shows its name
+    # right away, before any uploads are discovered. Best-effort: None on failure.
+    channel_name = discovery.fetch_channel_name(channel_id)
+    repos.add_channel(channel_id, title, channel_name)
+    return {"status": "channel added", "channel_id": channel_id, "channel_name": channel_name}
 
 
 @router.delete("/channels/{channel_id}")

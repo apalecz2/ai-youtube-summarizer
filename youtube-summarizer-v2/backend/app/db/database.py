@@ -38,12 +38,18 @@ def init_db() -> None:
 
         c.execute("""
             CREATE TABLE IF NOT EXISTS channels (
-                channel_id TEXT PRIMARY KEY,
-                title      TEXT,
-                added_at   INTEGER DEFAULT (strftime('%s','now')),
-                active     INTEGER NOT NULL DEFAULT 1
+                channel_id   TEXT PRIMARY KEY,
+                title        TEXT,
+                channel_name TEXT,
+                added_at     INTEGER DEFAULT (strftime('%s','now')),
+                active       INTEGER NOT NULL DEFAULT 1
             )
         """)
+        # Additive migration for installs created before channel_name existed
+        # (no migration framework — an idempotent ALTER is enough here).
+        channel_cols = {r["name"] for r in c.execute("PRAGMA table_info(channels)").fetchall()}
+        if "channel_name" not in channel_cols:
+            c.execute("ALTER TABLE channels ADD COLUMN channel_name TEXT")
 
         # Carried over from v1 (same semantics).
         c.execute("""

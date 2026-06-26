@@ -66,7 +66,10 @@ function ChannelCard({ channel, onRemoved }: { channel: Channel; onRemoved: () =
     <div className="card">
       <div className="row" style={{ justifyContent: "space-between" }}>
         <div>
-          <strong>{channel.title ?? channel.channel_id}</strong>
+          <strong>{channel.title ?? channel.channel_name ?? channel.channel_id}</strong>
+          {channel.channel_name && channel.channel_name !== channel.title && (
+            <div className="muted">{channel.channel_name}</div>
+          )}
           <div className="muted">{channel.channel_id}</div>
         </div>
         <button

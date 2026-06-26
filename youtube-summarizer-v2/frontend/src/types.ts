@@ -66,6 +66,7 @@ export interface VideoDetail {
 export interface Channel {
   channel_id: string;
   title: string | null;
+  channel_name: string | null;
   added_at: number;
   active: number;
 }

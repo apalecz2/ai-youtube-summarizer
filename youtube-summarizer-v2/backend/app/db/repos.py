@@ -13,12 +13,16 @@ def _now() -> int:
 
 
 # ── Channels ──────────────────────────────────────────────────
-def add_channel(channel_id: str, title: Optional[str] = None) -> None:
+def add_channel(channel_id: str, title: Optional[str] = None,
+                channel_name: Optional[str] = None) -> None:
     with db() as conn:
         conn.execute(
-            "INSERT INTO channels (channel_id, title) VALUES (?, ?) "
-            "ON CONFLICT(channel_id) DO UPDATE SET title=COALESCE(excluded.title, channels.title), active=1",
-            (channel_id, title),
+            "INSERT INTO channels (channel_id, title, channel_name) VALUES (?, ?, ?) "
+            "ON CONFLICT(channel_id) DO UPDATE SET "
+            "title=COALESCE(excluded.title, channels.title), "
+            "channel_name=COALESCE(excluded.channel_name, channels.channel_name), "
+            "active=1",
+            (channel_id, title, channel_name),
         )
 
 
@@ -29,10 +33,17 @@ def remove_channel(channel_id: str) -> None:
 
 def get_channels(active_only: bool = True) -> list[dict]:
     with db() as conn:
-        q = "SELECT channel_id, title, added_at, active FROM channels"
+        q = (
+            "SELECT c.channel_id, c.title, c.added_at, c.active, "
+            "COALESCE(c.channel_name, "
+            " (SELECT v.channel_name FROM videos v "
+            "  WHERE v.channel_id = c.channel_id AND v.channel_name IS NOT NULL "
+            "  ORDER BY v.published_at DESC LIMIT 1)) AS channel_name "
+            "FROM channels c"
+        )
         if active_only:
-            q += " WHERE active = 1"
-        q += " ORDER BY added_at DESC"
+            q += " WHERE c.active = 1"
+        q += " ORDER BY c.added_at DESC"
         return [dict(r) for r in conn.execute(q).fetchall()]
 
 
