@@ -36,9 +36,13 @@ def run_discovery() -> dict:
     """Scan all active channels once. Returns a small stats dict for logging/UI."""
     now = int(time.time())
     spread = max(1, FETCH_SPREAD_MINUTES) * 60
-    stats = {"channels": 0, "new": 0, "filtered": 0}
+    stats = {"channels": 0, "new": 0, "filtered": 0, "pre_existing": 0}
 
-    for channel_id in repos.get_channel_ids(active_only=True):
+    for channel in repos.get_channels(active_only=True):
+        channel_id = channel["channel_id"]
+        # Only uploads published AFTER the channel was added are processed, so
+        # adding a channel doesn't backfill its entire recent history.
+        added_at = channel["added_at"] or 0
         stats["channels"] += 1
         feed = feedparser.parse(f"https://www.youtube.com/feeds/videos.xml?channel_id={channel_id}")
         if not feed.entries:
@@ -56,19 +60,31 @@ def run_discovery() -> dict:
             title = getattr(entry, "title", "Unknown Title")
             channel_name = getattr(entry, "author", None)
             url = f"https://www.youtube.com/watch?v={video_id}"
+            published = _published_epoch(entry)
+
+            # Skip anything uploaded at/before the channel was added (or with no
+            # publish date we can trust). Record it as seen so the next scan
+            # doesn't re-evaluate it.
+            if published is None or published <= added_at:
+                repos.upsert_video(video_id=video_id, channel_id=channel_id, title=title,
+                                   channel_name=channel_name, url=url,
+                                   published_at=published, status="skipped")
+                repos.set_video_status(video_id, "skipped", "uploaded before channel was added")
+                stats["pre_existing"] += 1
+                continue
 
             # Cheap title filter on the RSS data before any yt-dlp work.
             if not passes_filters(rules, {"title": title}):
                 repos.upsert_video(video_id=video_id, channel_id=channel_id, title=title,
                                    channel_name=channel_name, url=url,
-                                   published_at=_published_epoch(entry), status="skipped")
+                                   published_at=published, status="skipped")
                 repos.set_video_status(video_id, "skipped", "did not pass channel filters")
                 stats["filtered"] += 1
                 continue
 
             repos.upsert_video(video_id=video_id, channel_id=channel_id, title=title,
                                channel_name=channel_name, url=url,
-                               published_at=_published_epoch(entry), status="queued")
+                               published_at=published, status="queued")
 
             # Random offset within the window => human-like, spread-out fetches.
             scheduled_at = now + random.randint(0, spread)
