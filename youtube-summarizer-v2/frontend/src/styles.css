@@ -127,6 +127,32 @@ header.topbar .spacer { flex: 1; }
 .summary-md h1, .summary-md h2, .summary-md h3 { margin-top: 1.2em; }
 .summary-md code { background: var(--panel-2); padding: 1px 5px; border-radius: 4px; }
 
+/* GFM tables */
+.summary-md table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 1em 0;
+  font-size: 14px;
+  display: block;
+  overflow-x: auto;
+}
+.summary-md th, .summary-md td {
+  border: 1px solid var(--border);
+  padding: 6px 10px;
+  text-align: left;
+}
+.summary-md th { background: var(--panel-2); font-weight: 600; }
+.summary-md tr:nth-child(even) td { background: var(--panel-2); }
+
+/* KaTeX math: keep display equations from overflowing the card */
+.summary-md .katex { font-size: 1.05em; }
+.summary-md .katex-display {
+  margin: 0.8em 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 2px 0;
+}
+
 .transcript {
   white-space: pre-wrap; line-height: 1.55; font-size: 14px;
   max-height: 420px; overflow-y: auto;

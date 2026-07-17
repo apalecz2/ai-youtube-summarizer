@@ -1,6 +1,10 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import remarkMath from "remark-math";
+import rehypeKatex from "rehype-katex";
+import "katex/dist/katex.min.css";
 import { api } from "../api";
 import type { VideoDetail } from "../types";
 import { fmtDate, fmtDuration, statusPill, isRateLimited } from "../util";
@@ -89,7 +93,12 @@ export default function VideoPage() {
             <span className="muted">{summary.model} · {fmtDate(summary.created_at)}</span>
           </div>
           <div className="summary-md">
-            <ReactMarkdown>{summary.summary_md}</ReactMarkdown>
+            <ReactMarkdown
+              remarkPlugins={[remarkGfm, remarkMath]}
+              rehypePlugins={[rehypeKatex]}
+            >
+              {summary.summary_md}
+            </ReactMarkdown>
           </div>
         </div>
       ) : (

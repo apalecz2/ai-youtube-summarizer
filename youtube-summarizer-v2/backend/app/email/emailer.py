@@ -7,10 +7,13 @@ import base64
 import smtplib
 from email.message import EmailMessage
 
+import re
+
 import markdown
 import requests
 
 from app import config
+from app.email.mathtext import latex_to_unicode
 
 _REQUIRED = (config.EMAIL_USERNAME, config.GMAIL_CLIENT_ID,
              config.GMAIL_CLIENT_SECRET, config.GMAIL_REFRESH_TOKEN)
@@ -56,8 +59,35 @@ def _normalize_markdown(md: str) -> str:
     return "\n".join(fixed)
 
 
+# Inline styles for table tags — email clients frequently strip <style> blocks,
+# so the styling has to ride on each element. Injected after Markdown renders.
+_TABLE_STYLE = "border-collapse:collapse;width:100%;margin:12px 0;font-size:14px;"
+_TH_STYLE = "border:1px solid #ddd;padding:6px 10px;background:#f5f5f5;text-align:left;"
+_TD_STYLE = "border:1px solid #ddd;padding:6px 10px;text-align:left;"
+
+
+def _style_tables(html: str) -> str:
+    """Add inline styling to table elements so tables render in email clients."""
+    def inject(tag: str, extra: str) -> None:
+        nonlocal html
+        # `(?=[\s/>])` is a tag-name boundary so "th" doesn't also hit "thead".
+        # Tag with an existing style attr (e.g. the tables extension adds
+        # text-align): prepend our declarations — the alignment then wins as the
+        # later declaration, which is what we want.
+        html = re.sub(rf"<{tag}(?=[\s/>])([^>]*?)style=\"", rf'<{tag}\1style="{extra}', html)
+        # Tag without a style attr: add one.
+        html = re.sub(rf"<{tag}(?=[\s/>])(?![^>]*style=)([^>]*)>", rf'<{tag}\1 style="{extra}">', html)
+
+    inject("table", _TABLE_STYLE)
+    inject("th", _TH_STYLE)
+    inject("td", _TD_STYLE)
+    return html
+
+
 def _md_to_html(md_text: str) -> str:
-    return markdown.markdown(_normalize_markdown(md_text), extensions=["extra", "sane_lists"])
+    prepared = _normalize_markdown(latex_to_unicode(md_text))
+    html = markdown.markdown(prepared, extensions=["extra", "sane_lists"])
+    return _style_tables(html)
 
 
 def send_summary_email(*, video_title: str, channel_name: str, summary: str,
@@ -72,8 +102,9 @@ def send_summary_email(*, video_title: str, channel_name: str, summary: str,
     msg["Subject"] = f"YouTube Summary: {video_title}"
 
     app_line = f"\n\nOpen in app:\n{app_url}" if app_url else ""
+    summary_text = latex_to_unicode(summary)
     msg.set_content(
-        f"Channel: {channel_name}\n\nTitle: {video_title}\n\nSummary:\n{summary}\n\n"
+        f"Channel: {channel_name}\n\nTitle: {video_title}\n\nSummary:\n{summary_text}\n\n"
         f"Watch here:\n{youtube_url}{app_line}\n"
     )
 
