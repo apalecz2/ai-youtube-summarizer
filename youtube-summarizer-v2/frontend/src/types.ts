@@ -110,10 +110,17 @@ export interface UpcomingJob {
   priority: number;
 }
 
+export interface WorkerStatus {
+  alive: boolean;
+  seconds_since_heartbeat: number | null;
+  stalled: boolean;
+}
+
 export interface SystemStatus {
   now: number;
   queue: Record<string, number>;
   backoff: BackoffStatus;
+  worker: WorkerStatus;
   poll_interval_minutes: number;
   next_poll_at: number | null;
   next_poll_in_seconds: number | null;

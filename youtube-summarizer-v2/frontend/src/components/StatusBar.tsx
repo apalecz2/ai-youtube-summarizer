@@ -76,7 +76,11 @@ export default function StatusBar() {
           {upcoming.length > 0 ? ` · ${upcoming.length} queued` : ""} {open ? "▴" : "▾"}
         </span>
         <span className="spacer" style={{ flex: 1 }} />
-        {b.blocked ? (
+        {s.worker.stalled ? (
+          <span className="pill bad" title="The background worker isn't picking up jobs. Queued videos will sit at 'processing soon' until the app is restarted.">
+            🛑 Worker stalled{s.worker.alive ? "" : " (not running)"}
+          </span>
+        ) : b.blocked ? (
           <span className="pill bad" title="YouTube is rate-limiting this server's IP. Transcript fetches will fail until this clears or traffic is routed through a different IP.">
             ⛔ Rate-limited by YouTube (level {b.backoff_level}) · {Math.ceil(b.seconds_remaining / 60)}m left
           </span>
