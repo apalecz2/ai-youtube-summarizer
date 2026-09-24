@@ -10,6 +10,7 @@ from app.config import POLL_INTERVAL_MINUTES
 from app.db import repos
 from app.discovery import run_discovery
 from app.security import require_auth
+from app.worker import worker
 from app.youtube import fetcher, gate
 
 router = APIRouter(tags=["actions"], dependencies=[Depends(require_auth)])
@@ -121,12 +122,25 @@ def cancel_cooldown():
     return {"status": "cooldown_cleared", "backoff": gate.status()}
 
 
+# How stale the worker's heartbeat can get before we call it "stalled" in the
+# UI. Generous: backoff checks re-loop every 60s at most, idle polls every 8s,
+# and a single job (yt-dlp + LLM call) can legitimately take a couple minutes.
+_WORKER_STALL_SECONDS = 600
+
+
 @router.get("/status")
 def status():
     """Queue + backoff plus the upcoming schedule: when the next channel scan
     runs and when each queued video is due to be processed."""
     now = int(time.time())
     next_poll = scheduler.next_poll_at()
+    heartbeat_age = worker.seconds_since_heartbeat()
+    worker_status = {
+        "alive": worker.is_alive(),
+        "seconds_since_heartbeat": heartbeat_age,
+        "stalled": (not worker.is_alive())
+        or (heartbeat_age is not None and heartbeat_age > _WORKER_STALL_SECONDS),
+    }
     upcoming = [
         {
             "video_id": j["video_id"],
@@ -143,6 +157,7 @@ def status():
         "now": now,
         "queue": repos.job_queue_stats(),
         "backoff": gate.status(),
+        "worker": worker_status,
         "poll_interval_minutes": POLL_INTERVAL_MINUTES,
         "next_poll_at": next_poll,
         "next_poll_in_seconds": (next_poll - now) if next_poll is not None else None,

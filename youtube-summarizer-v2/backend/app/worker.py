@@ -29,15 +29,43 @@ _TRANSIENT_RETRY_SECONDS = 300
 _RETRY_LATER_SECONDS = 3600  # upcoming premiere: check back in ~an hour
 
 
+# If the loop dies unexpectedly and gets auto-restarted, don't let a persistent
+# error (e.g. a wedged DB) spin it in a tight crash loop.
+_CRASH_RESTART_DELAY_SECONDS = 5
+
+
 class Worker:
     def __init__(self) -> None:
         self._task: asyncio.Task | None = None
         self._stop = asyncio.Event()
+        # Updated at the top of every loop iteration. Lets /api/status (and
+        # anyone reading logs) tell "alive but idle/blocked" apart from "the
+        # loop died and nobody noticed" — see the incident this guards against
+        # in worker.py's module docstring history: an unguarded DB call threw,
+        # the task ended, and nothing was left to claim jobs ever again.
+        self._last_heartbeat: float = 0.0
 
     def start(self) -> None:
         if self._task is None or self._task.done():
             self._stop.clear()
+            self._last_heartbeat = time.time()
             self._task = asyncio.create_task(self._run(), name="yt-worker")
+            self._task.add_done_callback(self._on_task_done)
+
+    def _on_task_done(self, task: asyncio.Task) -> None:
+        """The loop body catches everything it can, so this only fires on a
+        truly unexpected escape (or cancellation). Restart rather than leave
+        the worker dead with no supervisor to notice."""
+        if self._stop.is_set() or task.cancelled():
+            return
+        exc = task.exception()
+        if exc is not None:
+            print(f"[worker] loop exited via unhandled exception, restarting: "
+                  f"{type(exc).__name__}: {exc}")
+            traceback.print_exception(type(exc), exc, exc.__traceback__)
+        else:
+            print("[worker] loop exited unexpectedly (no exception), restarting")
+        self.start()
 
     async def stop(self) -> None:
         self._stop.set()
@@ -46,6 +74,12 @@ class Worker:
                 await asyncio.wait_for(self._task, timeout=10)
             except asyncio.TimeoutError:
                 self._task.cancel()
+
+    def is_alive(self) -> bool:
+        return self._task is not None and not self._task.done()
+
+    def seconds_since_heartbeat(self) -> float | None:
+        return (time.time() - self._last_heartbeat) if self._last_heartbeat else None
 
     async def _sleep(self, seconds: float) -> None:
         """Interruptible sleep so shutdown is prompt."""
@@ -57,22 +91,30 @@ class Worker:
     async def _run(self) -> None:
         print("[worker] started")
         while not self._stop.is_set():
-            # Respect the global backoff window before touching YouTube.
-            remaining = gate.seconds_until_unblocked()
-            if remaining > 0:
-                await self._sleep(min(remaining, _BACKOFF_CHECK_CAP_SECONDS))
-                continue
+            self._last_heartbeat = time.time()
+            try:
+                # Respect the global backoff window before touching YouTube.
+                remaining = gate.seconds_until_unblocked()
+                if remaining > 0:
+                    await self._sleep(min(remaining, _BACKOFF_CHECK_CAP_SECONDS))
+                    continue
 
-            job = repos.claim_due_job()
-            if not job:
-                await self._sleep(_IDLE_POLL_SECONDS)
-                continue
+                job = repos.claim_due_job()
+                if not job:
+                    await self._sleep(_IDLE_POLL_SECONDS)
+                    continue
 
-            await self._handle(job)
+                await self._handle(job)
 
-            # Human-like gap before the next YouTube request.
-            jitter = random.uniform(FETCH_JITTER_MIN_SECONDS, FETCH_JITTER_MAX_SECONDS)
-            await self._sleep(jitter)
+                # Human-like gap before the next YouTube request.
+                jitter = random.uniform(FETCH_JITTER_MIN_SECONDS, FETCH_JITTER_MAX_SECONDS)
+                await self._sleep(jitter)
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:  # noqa: BLE001 - loop must never die silently
+                print(f"[worker] loop iteration error (continuing): {type(e).__name__}: {e}")
+                traceback.print_exc()
+                await self._sleep(_CRASH_RESTART_DELAY_SECONDS)
         print("[worker] stopped")
 
     async def _handle(self, job: dict) -> None:

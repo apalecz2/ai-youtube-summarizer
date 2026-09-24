@@ -98,7 +98,11 @@ export default function StatusBar() {
           {upcoming.length > 0 ? ` · ${upcoming.length} queued` : ""} {open ? "▴" : "▾"}
         </span>
         <span className="spacer" style={{ flex: 1 }} />
-        {b.manual ? (
+        {s.worker.stalled ? (
+          <span className="pill bad" title="The background worker isn't picking up jobs. Queued videos will sit at 'processing soon' until the app is restarted.">
+            🛑 Worker stalled{s.worker.alive ? "" : " (not running)"}
+          </span>
+        ) : b.manual ? (
           <span className="pill warn" title="Transcript fetching is manually paused. RSS scanning for new videos keeps running as normal.">
             ⏸ Fetching paused · {Math.ceil(b.seconds_remaining / 60)}m left
           </span>
