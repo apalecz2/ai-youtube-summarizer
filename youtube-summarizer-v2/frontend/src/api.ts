@@ -74,6 +74,9 @@ export const api = {
   poll: () => req<{ status: string; new: number }>("/poll", { method: "POST" }),
   status: () => req<SystemStatus>("/status"),
   cancelQueued: (id: string) => req<{ status: string; video_id: string }>(`/queue/${id}`, { method: "DELETE" }),
+  startCooldown: (minutes: number) =>
+    req<{ status: string; blocked_until: number }>("/cooldown", form({ minutes: String(minutes) })),
+  cancelCooldown: () => req<{ status: string }>("/cooldown", { method: "DELETE" }),
 
   // ── Reconcile failures ──
   retryVideo: (id: string) => req<{ status: string; enqueued: boolean }>(`/videos/${id}/retry`, { method: "POST" }),

@@ -419,7 +419,8 @@ def get_rate_limit_state() -> dict:
 def set_rate_limit_state(*, blocked_until: int, backoff_level: int, last_block_at: Optional[int] = None) -> None:
     with db() as conn:
         conn.execute(
-            "UPDATE rate_limit_state SET blocked_until=?, backoff_level=?, last_block_at=COALESCE(?, last_block_at) WHERE id=1",
+            "UPDATE rate_limit_state SET blocked_until=?, backoff_level=?, "
+            "last_block_at=COALESCE(?, last_block_at), manual=0 WHERE id=1",
             (blocked_until, backoff_level, last_block_at),
         )
 
@@ -428,5 +429,18 @@ def mark_success() -> None:
     """Clear backoff after a clean YouTube call."""
     with db() as conn:
         conn.execute(
-            "UPDATE rate_limit_state SET backoff_level=0, blocked_until=0, last_success_at=strftime('%s','now') WHERE id=1"
+            "UPDATE rate_limit_state SET backoff_level=0, blocked_until=0, manual=0, "
+            "last_success_at=strftime('%s','now') WHERE id=1"
         )
+
+
+def set_manual_cooldown(blocked_until: int) -> None:
+    """Admin-set pause of worker fetches. Kept separate from backoff_level so it
+    isn't mistaken for (and doesn't escalate) a real YouTube block."""
+    with db() as conn:
+        conn.execute("UPDATE rate_limit_state SET blocked_until=?, manual=1 WHERE id=1", (blocked_until,))
+
+
+def clear_manual_cooldown() -> None:
+    with db() as conn:
+        conn.execute("UPDATE rate_limit_state SET blocked_until=0, manual=0 WHERE id=1")

@@ -95,6 +95,32 @@ async def poll():
     return {"status": "discovery_complete", **stats}
 
 
+@router.post("/cooldown")
+def start_cooldown(minutes: int = Form(...)):
+    """Manually pause transcript fetching for a set number of minutes. RSS
+    discovery keeps running as normal — only the worker (yt-dlp/transcripts)
+    is paused, via the same gate the anti-bot backoff uses."""
+    if minutes < 1 or minutes > gate.MAX_MANUAL_COOLDOWN_MINUTES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"minutes must be between 1 and {gate.MAX_MANUAL_COOLDOWN_MINUTES}",
+        )
+    blocked_until = gate.set_manual_cooldown(minutes)
+    return {"status": "cooldown_set", "blocked_until": blocked_until, "backoff": gate.status()}
+
+
+@router.delete("/cooldown")
+def cancel_cooldown():
+    """Resume transcript fetching immediately, clearing an active manual
+    cooldown. Does not touch a real YouTube backoff window — that can only
+    clear on its own timer or a clean success, so this never undoes anti-bot
+    protection."""
+    if not gate.is_manual_cooldown():
+        raise HTTPException(status_code=409, detail="No manual cooldown is active")
+    gate.clear_manual_cooldown()
+    return {"status": "cooldown_cleared", "backoff": gate.status()}
+
+
 @router.get("/status")
 def status():
     """Queue + backoff plus the upcoming schedule: when the next channel scan

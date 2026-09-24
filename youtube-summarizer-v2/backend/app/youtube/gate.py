@@ -57,7 +57,8 @@ def block_diagnosis() -> dict:
     last_block = int(state["last_block_at"] or 0)
     since = (now - last_block) if last_block else None
     return {
-        "currently_blocked": is_blocked(),
+        # Excludes an admin-set manual cooldown — that's not YouTube's doing.
+        "currently_blocked": is_blocked() and not is_manual_cooldown(),
         "backoff_level": int(state["backoff_level"]),
         "last_block_at": last_block or None,
         "seconds_since_block": since,
@@ -120,6 +121,31 @@ def register_success() -> None:
     repos.mark_success()
 
 
+# Manual cooldown (admin-triggered pause of the worker). Shares the same
+# blocked_until window the worker already checks (worker.py), so pausing it
+# needs no worker changes — and discovery.py never consults this module, so
+# RSS scanning keeps running normally while fetches are paused.
+MAX_MANUAL_COOLDOWN_MINUTES = 24 * 60
+
+
+def is_manual_cooldown() -> bool:
+    state = repos.get_rate_limit_state()
+    return bool(state["manual"]) and is_blocked()
+
+
+def set_manual_cooldown(minutes: int) -> int:
+    """Pause the worker for `minutes` without touching the backoff escalation
+    level. Returns the new blocked_until epoch."""
+    minutes = max(1, min(int(minutes), MAX_MANUAL_COOLDOWN_MINUTES))
+    blocked_until = int(time.time()) + minutes * 60
+    repos.set_manual_cooldown(blocked_until)
+    return blocked_until
+
+
+def clear_manual_cooldown() -> None:
+    repos.clear_manual_cooldown()
+
+
 def status() -> dict:
     state = repos.get_rate_limit_state()
     diag = block_diagnosis()
@@ -131,4 +157,5 @@ def status() -> dict:
         "last_block_at": state["last_block_at"],
         "last_success_at": state["last_success_at"],
         "recently_blocked": diag["recently_blocked"],
+        "manual": is_manual_cooldown(),
     }

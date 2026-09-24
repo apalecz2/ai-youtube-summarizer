@@ -153,6 +153,11 @@ def init_db() -> None:
             )
         """)
         c.execute("INSERT OR IGNORE INTO rate_limit_state (id, blocked_until, backoff_level) VALUES (1, 0, 0)")
+        # Additive migration: distinguishes an admin-set manual cooldown from a
+        # real YouTube block sharing the same blocked_until window.
+        rate_limit_cols = {r["name"] for r in c.execute("PRAGMA table_info(rate_limit_state)").fetchall()}
+        if "manual" not in rate_limit_cols:
+            c.execute("ALTER TABLE rate_limit_state ADD COLUMN manual INTEGER NOT NULL DEFAULT 0")
 
         # ── FTS5 search indexes ───────────────────────────────
         c.execute("""
