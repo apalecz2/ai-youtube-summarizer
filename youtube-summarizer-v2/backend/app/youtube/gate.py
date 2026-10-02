@@ -125,7 +125,7 @@ def register_success() -> None:
 # blocked_until window the worker already checks (worker.py), so pausing it
 # needs no worker changes — and discovery.py never consults this module, so
 # RSS scanning keeps running normally while fetches are paused.
-MAX_MANUAL_COOLDOWN_MINUTES = 24 * 60
+MAX_MANUAL_COOLDOWN_MINUTES = 30 * 24 * 60  # 30 days
 
 
 def is_manual_cooldown() -> bool:

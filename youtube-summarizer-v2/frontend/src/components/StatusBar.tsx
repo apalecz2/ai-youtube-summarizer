@@ -2,6 +2,9 @@ import { useEffect, useState } from "react";
 import { api } from "../api";
 import type { SystemStatus } from "../types";
 
+// Mirrors backend gate.MAX_MANUAL_COOLDOWN_MINUTES (30 days).
+const _MAX_COOLDOWN_MINUTES = 30 * 24 * 60;
+
 /** Human-readable "in 3m" / "now" from a seconds-until value. */
 function fmtIn(seconds: number): string {
   if (seconds <= 0) return "now";
@@ -150,9 +153,11 @@ export default function StatusBar() {
                 <input
                   type="number"
                   min={1}
-                  max={1440}
+                  max={_MAX_COOLDOWN_MINUTES}
                   value={cooldownMinutes}
-                  onChange={(e) => setCooldownMinutes(Math.max(1, Number(e.target.value) || 1))}
+                  onChange={(e) =>
+                    setCooldownMinutes(Math.min(_MAX_COOLDOWN_MINUTES, Math.max(1, Number(e.target.value) || 1)))
+                  }
                   className="cooldown-input"
                 />
                 <span className="muted">min</span>
