@@ -12,7 +12,7 @@ from typing import Optional
 
 import yt_dlp
 
-from app import config
+from app import config, events
 from app.db import repos
 from app.email.emailer import send_summary_email, send_error_email
 from app.llm.summarizer import safe_summarize
@@ -59,6 +59,7 @@ def process_job(job: dict) -> str:
     allow_long = job.get("priority", 0) > 0  # manual requests may exceed the length cap
 
     repos.set_video_status(video_id, "fetching")
+    events.set_stage("metadata (yt-dlp extract_info)")
 
     # ── 1. Metadata + caption availability (single extract_info call) ──
     try:
@@ -68,6 +69,7 @@ def process_job(job: dict) -> str:
             raise gate.BlockedError(str(e))
         # Genuine "unavailable / private / removed" — record and move on.
         reason = f"metadata fetch failed — {type(e).__name__}: {e}"
+        events.log("error", "job", reason[:500], video_id=video_id, job_id=job.get("id"))
         repos.set_video_status(video_id, "failed", reason)
         send_failure_email(subject=f"Metadata Fetch Failed: {video_id}", error_message=reason,
                             stage="metadata (yt-dlp extract_info)", video_id=video_id, job=job)
@@ -79,22 +81,29 @@ def process_job(job: dict) -> str:
 
     # ── 2. Skip rules (same thresholds as v1) ──
     live = meta["live_status"]
+    events.log("info", "job", f"metadata ok: \"{meta['title']}\" ({meta['duration']}s, {live})",
+               video_id=video_id, job_id=job.get("id"))
     if live == "is_upcoming":
         # Don't mark terminal — the worker re-queues this job for later, once it airs.
         repos.set_video_status(video_id, "queued", "upcoming premiere")
+        events.log("info", "job", "upcoming premiere — will check again later", video_id=video_id, job_id=job.get("id"))
         return JobResult.RETRY_LATER
     if live == "is_live":
         repos.set_video_status(video_id, "skipped", "currently live")
+        events.log("info", "job", "skipped: currently live", video_id=video_id, job_id=job.get("id"))
         return JobResult.SKIPPED
     duration = meta["duration"] or 0
     if 0 < duration < config.MIN_DURATION_SECONDS:
         repos.set_video_status(video_id, "skipped", f"short ({duration}s)")
+        events.log("info", "job", f"skipped: short ({duration}s)", video_id=video_id, job_id=job.get("id"))
         return JobResult.SKIPPED
     if duration > config.MAX_DURATION_SECONDS and not allow_long:
         repos.set_video_status(video_id, "skipped", f"too long ({duration}s)")
+        events.log("info", "job", f"skipped: too long ({duration}s)", video_id=video_id, job_id=job.get("id"))
         return JobResult.SKIPPED
 
     # ── 3. Transcript ──
+    events.set_stage("transcript (subtitle download)")
     transcript_error: Optional[str] = None
     try:
         transcript = fetcher.fetch_transcript_from_info(info)
@@ -131,6 +140,7 @@ def process_job(job: dict) -> str:
         if rl_note:
             reason = f"[rate-limited] {reason} — {rl_note}"
         subject = ("Rate-Limited (No Transcript): " if rl_note else "Missing Transcript: ") + meta["title"]
+        events.log("warn", "job", f"no transcript: {reason}"[:1500], video_id=video_id, job_id=job.get("id"))
         repos.set_video_status(video_id, "failed", reason)
         send_failure_email(subject=subject, error_message=reason,
                            stage="transcript", video_id=video_id, job=job, meta=meta)
@@ -138,12 +148,18 @@ def process_job(job: dict) -> str:
 
     repos.save_transcript(video_id, transcript["text"], lang=transcript.get("lang"),
                           source=transcript.get("source"))
+    events.log("info", "job", f"transcript ok: {len(transcript['text'])} chars, "
+               f"lang={transcript.get('lang')}, source={transcript.get('source')}",
+               video_id=video_id, job_id=job.get("id"))
+
+    events.set_stage("summarizing (LLM)")
 
     # ── 4. Summarize ──
     result, summarize_error = safe_summarize(transcript["text"], detail=detail_level,
                                              channel_name=meta["channel"], video_title=meta["title"])
     if not result:
         reason = f"summarization failed — {summarize_error or 'unknown error'}"
+        events.log("error", "job", reason[:1000], video_id=video_id, job_id=job.get("id"))
         repos.set_video_status(video_id, "failed", reason)
         send_failure_email(subject=f"Summarization Failed: {meta['title']}", error_message=reason,
                             stage="summarization (LLM)", video_id=video_id, job=job, meta=meta)
@@ -152,9 +168,12 @@ def process_job(job: dict) -> str:
     summary_md, model = result
     repos.save_summary(video_id, summary_md, detail_level=detail_level, model=model)
     repos.set_video_status(video_id, "summarized")
+    events.log("info", "job", f"summarized with {model} ({len(summary_md)} chars)",
+               video_id=video_id, job_id=job.get("id"))
 
     # ── 5. Email (core feature retained) ──
     if send_email:
+        events.set_stage("emailing summary")
         video = repos.get_video(video_id) or {}
         send_summary_email(
             video_title=meta["title"], channel_name=meta["channel"], summary=summary_md,

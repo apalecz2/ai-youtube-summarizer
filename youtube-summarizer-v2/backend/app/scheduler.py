@@ -9,20 +9,38 @@ from datetime import datetime, timedelta
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
+from app import events
 from app.config import POLL_INTERVAL_MINUTES
+from app.db import repos
 from app.discovery import run_discovery
 from app.worker import worker
 
 _scheduler: AsyncIOScheduler | None = None
+
+# Result of the most recent discovery scan (scheduled or manual), for the System page.
+last_discovery: dict | None = None
+
+
+def record_discovery(stats: dict) -> None:
+    global last_discovery
+    last_discovery = {**stats, "at": int(__import__("time").time())}
+    events.log("info", "discovery",
+               f"scan complete: {stats.get('channels', 0)} channels, {stats.get('new', 0)} new queued, "
+               f"{stats.get('filtered', 0)} filtered, {stats.get('pre_existing', 0)} pre-existing")
 
 
 async def _discovery_job() -> None:
     import asyncio
     try:
         stats = await asyncio.to_thread(run_discovery)
-        print(f"[discovery] {stats}")
+        record_discovery(stats)
     except Exception as e:  # noqa: BLE001
-        print(f"[discovery] error: {e}")
+        events.log("error", "discovery", f"scan failed: {type(e).__name__}: {e}")
+    # Housekeeping rides along with the scan so the event log stays bounded.
+    try:
+        repos.prune_events(events.KEEP_EVENTS)
+    except Exception as e:  # noqa: BLE001
+        print(f"[scheduler] event prune failed: {e}")
 
 
 def start() -> None:
@@ -42,7 +60,7 @@ def start() -> None:
         next_run_time=datetime.now() + timedelta(seconds=10),
     )
     _scheduler.start()
-    print(f"[scheduler] discovery every {POLL_INTERVAL_MINUTES} min")
+    events.log("info", "scheduler", f"scheduler started: discovery every {POLL_INTERVAL_MINUTES} min")
 
 
 async def stop() -> None:

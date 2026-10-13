@@ -3,6 +3,7 @@
  * prod is served by FastAPI), with credentials so the session cookie is sent.
  */
 import type {
+  AppEvent, Diagnostics, JobRow, VideoTrace,
   Channel, ChannelFilter, Quiz, SearchResult, SummaryListItem,
   SystemStatus, Transcript, Video, VideoDetail,
 } from "./types";
@@ -73,6 +74,16 @@ export const api = {
   summarize: (url: string, detail = 2) => req("/summarize", form({ url, detail: String(detail) })),
   poll: () => req<{ status: string; new: number }>("/poll", { method: "POST" }),
   status: () => req<SystemStatus>("/status"),
+  diagnostics: () => req<Diagnostics>("/diagnostics"),
+  events: (p: { limit?: number; level?: string; source?: string; video_id?: string; q?: string; before_id?: number } = {}) => {
+    const qs = new URLSearchParams();
+    Object.entries(p).forEach(([k, v]) => { if (v !== undefined && v !== "") qs.set(k, String(v)); });
+    return req<{ events: AppEvent[] }>(`/events?${qs}`);
+  },
+  jobs: (status?: string) => req<{ jobs: JobRow[] }>(`/jobs${status ? `?status=${status}` : ""}`),
+  videoTrace: (id: string) => req<VideoTrace>(`/videos/${id}/trace`),
+  fixStuck: () => req<{ requeued: number }>("/diagnostics/fix-stuck", { method: "POST" }),
+  clearCooldown: () => req<{ status: string }>("/cooldown", { method: "DELETE" }),
   cancelQueued: (id: string) => req<{ status: string; video_id: string }>(`/queue/${id}`, { method: "DELETE" }),
 
   // ── Reconcile failures ──

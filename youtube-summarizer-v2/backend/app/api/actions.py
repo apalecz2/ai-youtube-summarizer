@@ -5,7 +5,7 @@ import time
 
 from fastapi import APIRouter, Depends, Form, HTTPException
 
-from app import scheduler
+from app import events, scheduler
 from app.config import POLL_INTERVAL_MINUTES
 from app.db import repos
 from app.discovery import run_discovery
@@ -28,6 +28,7 @@ def summarize_now(url: str = Form(...), detail: int = Form(2)):
         raise HTTPException(status_code=400, detail="detail must be 1, 2, or 3")
 
     repos.upsert_video(video_id=video_id, url=url, status="queued")
+    events.log("info", "api", f"manual summarize requested (detail {detail})", video_id=video_id)
     if not repos.has_pending_job(video_id):
         repos.enqueue_job(video_id=video_id, scheduled_at=int(time.time()),
                           priority=_MANUAL_PRIORITY, detail_level=detail, send_email=True)
@@ -39,6 +40,7 @@ def _requeue(video_id: str, *, priority: int) -> bool:
     """Set a video back to 'queued' and enqueue a job if none is pending.
     Returns True if a new job was enqueued."""
     repos.set_video_status(video_id, "queued", "retry requested")
+    events.log("info", "api", "retry requested", video_id=video_id)
     if repos.has_pending_job(video_id):
         return False
     repos.enqueue_job(video_id=video_id, scheduled_at=int(time.time()),
@@ -60,6 +62,7 @@ def dismiss_video(video_id: str):
     """Acknowledge a failed video so it drops out of the 'needs attention' list."""
     if not repos.dismiss_video(video_id):
         raise HTTPException(status_code=404, detail="No failed video to dismiss")
+    events.log("info", "api", "failed video dismissed", video_id=video_id)
     return {"status": "dismissed", "video_id": video_id}
 
 
@@ -86,6 +89,7 @@ def cancel_queued(video_id: str):
             status_code=404,
             detail="No pending job to remove (it may already be processing or done).",
         )
+    events.log("info", "api", "removed from queue", video_id=video_id)
     return {"status": "removed", "video_id": video_id}
 
 
@@ -93,6 +97,7 @@ def cancel_queued(video_id: str):
 async def poll():
     """Trigger discovery immediately (v1-compatible). Fetches still spread out."""
     stats = await asyncio.to_thread(run_discovery)
+    scheduler.record_discovery(stats)
     return {"status": "discovery_complete", **stats}
 
 

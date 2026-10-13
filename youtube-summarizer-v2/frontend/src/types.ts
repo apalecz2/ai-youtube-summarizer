@@ -126,3 +126,93 @@ export interface SystemStatus {
   next_poll_in_seconds: number | null;
   upcoming: UpcomingJob[];
 }
+
+// ── System / diagnostics ──
+export interface HealthCheck {
+  id: string;
+  level: "ok" | "warn" | "bad";
+  title: string;
+  detail: string;
+}
+
+export interface WorkerActivity {
+  job_id: number;
+  video_id: string;
+  attempt: number | null;
+  stage: string;
+  running_seconds: number;
+  stage_seconds: number;
+}
+
+export interface FileInfo { exists: boolean; bytes: number; modified_at: number | null }
+
+export interface Diagnostics {
+  now: number;
+  health: HealthCheck[];
+  worker: { alive: boolean; seconds_since_heartbeat: number | null; stalled: boolean; activity: WorkerActivity | null };
+  backoff: BackoffStatus;
+  scheduler: {
+    next_poll_at: number | null;
+    next_poll_in_seconds: number | null;
+    last_discovery: { at: number; channels: number; new: number; filtered: number; pre_existing: number } | null;
+  };
+  queue: Record<string, number>;
+  videos: Record<string, number>;
+  videos_last_24h: Record<string, number>;
+  tables: Record<string, number>;
+  database: { path: string; db: FileInfo; wal: FileInfo };
+  problems: Record<string, Record<string, unknown>[]>;
+  config: {
+    poll_interval_minutes: number;
+    fetch_spread_minutes: number;
+    fetch_jitter_seconds: [number, number];
+    backoff_schedule_minutes: number[];
+    min_duration_seconds: number;
+    max_duration_seconds: number;
+    cookies_file: string | null;
+    cookies: Partial<FileInfo>;
+    proxy_set: boolean;
+    impersonate: string | null;
+    curl_cffi_installed: boolean;
+    ytdlp_version: string | null;
+    python_version: string;
+    gemini_key_set: boolean;
+    email_configured: boolean;
+    app_base_url_set: boolean;
+    data_dir: string;
+  };
+}
+
+export interface AppEvent {
+  id: number;
+  ts: number;
+  level: "info" | "warn" | "error";
+  source: string;
+  message: string;
+  video_id: string | null;
+  job_id: number | null;
+}
+
+export interface JobRow {
+  id: number;
+  video_id: string;
+  job_type: string;
+  priority: number;
+  scheduled_at: number;
+  attempts: number;
+  status: string;
+  last_error: string | null;
+  detail_level: number;
+  send_email: number;
+  created_at: number;
+  title?: string | null;
+  channel_name?: string | null;
+  video_status?: string | null;
+  url?: string | null;
+}
+
+export interface VideoTrace {
+  video_id: string;
+  jobs: JobRow[];
+  events: AppEvent[];
+}

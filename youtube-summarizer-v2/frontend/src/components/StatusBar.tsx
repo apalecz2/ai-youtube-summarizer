@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { api } from "../api";
 import type { SystemStatus } from "../types";
 
@@ -76,6 +77,7 @@ export default function StatusBar() {
           {upcoming.length > 0 ? ` · ${upcoming.length} queued` : ""} {open ? "▴" : "▾"}
         </span>
         <span className="spacer" style={{ flex: 1 }} />
+        <Link to="/system" className="pill" title="Detailed health, queue, database state and event log">System ›</Link>
         {s.worker.stalled ? (
           <span className="pill bad" title="The background worker isn't picking up jobs. Queued videos will sit at 'processing soon' until the app is restarted.">
             🛑 Worker stalled{s.worker.alive ? "" : " (not running)"}

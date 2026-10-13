@@ -189,3 +189,34 @@ header.topbar .spacer { flex: 1; }
   border-radius: 6px;
   color: var(--text);
 }
+
+/* ── System page ── */
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; }
+.stats { display: flex; flex-wrap: wrap; gap: 10px; }
+.stat { background: var(--panel-2); border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; min-width: 88px; }
+.stat-n { font-size: 20px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.stat-n.bad { color: var(--accent); }
+.stat-n.warn { color: var(--warn); }
+
+ul.health { list-style: none; margin: 8px 0; padding: 0; }
+ul.health li { display: flex; gap: 10px; align-items: flex-start; padding: 6px 0; border-top: 1px solid var(--border); font-size: 14px; }
+.dot { flex: 0 0 10px; height: 10px; border-radius: 50%; margin-top: 5px; background: var(--muted); }
+.dot.ok { background: var(--good); }
+.dot.warn { background: var(--warn); }
+.dot.bad { background: var(--accent); }
+
+.events { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; max-height: 480px; overflow-y: auto; }
+.event { display: flex; gap: 10px; padding: 3px 6px; border-left: 3px solid transparent; line-height: 1.45; }
+.event.warn { border-left-color: var(--warn); background: rgba(224,168,61,0.07); }
+.event.error { border-left-color: var(--accent); background: rgba(255,77,79,0.09); }
+.ev-time { flex: 0 0 auto; color: var(--muted); }
+.ev-src { flex: 0 0 76px; color: var(--accent-2); }
+.ev-msg { flex: 1; min-width: 0; word-break: break-word; }
+.ev-ref { color: var(--muted); }
+
+.table-wrap { overflow-x: auto; }
+table.jobs { width: 100%; border-collapse: collapse; font-size: 13px; }
+table.jobs th, table.jobs td { text-align: left; padding: 5px 8px; border-top: 1px solid var(--border); vertical-align: top; }
+table.jobs th { color: var(--muted); font-weight: 500; }
+table.kv { border-collapse: collapse; font-size: 13px; }
+table.kv td { padding: 3px 18px 3px 0; vertical-align: top; }

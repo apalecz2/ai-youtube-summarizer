@@ -15,6 +15,7 @@ Strategy:
 """
 import time
 
+from app import events
 from app.config import BACKOFF_SCHEDULE_MINUTES
 from app.db import repos
 
@@ -113,10 +114,13 @@ def register_block() -> int:
     level = int(state["backoff_level"]) + 1
     blocked_until = now + _backoff_seconds(level)
     repos.set_rate_limit_state(blocked_until=blocked_until, backoff_level=level, last_block_at=now)
+    events.log("warn", "gate", f"backoff escalated to level {level}: blocked for {_backoff_seconds(level) // 60}m")
     return blocked_until
 
 
 def register_success() -> None:
+    if int(repos.get_rate_limit_state()["backoff_level"]) > 0:
+        events.log("info", "gate", "YouTube request succeeded — backoff reset to level 0")
     repos.mark_success()
 
 

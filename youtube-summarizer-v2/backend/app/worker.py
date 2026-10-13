@@ -13,6 +13,7 @@ import random
 import time
 import traceback
 
+from app import events
 from app.config import FETCH_JITTER_MIN_SECONDS, FETCH_JITTER_MAX_SECONDS
 from app.db import repos
 from app.jobs import JobResult, process_job, send_failure_email
@@ -60,11 +61,11 @@ class Worker:
             return
         exc = task.exception()
         if exc is not None:
-            print(f"[worker] loop exited via unhandled exception, restarting: "
-                  f"{type(exc).__name__}: {exc}")
+            events.log("error", "worker", f"loop exited via unhandled exception, restarting: "
+                       f"{type(exc).__name__}: {exc}")
             traceback.print_exception(type(exc), exc, exc.__traceback__)
         else:
-            print("[worker] loop exited unexpectedly (no exception), restarting")
+            events.log("error", "worker", "loop exited unexpectedly (no exception), restarting")
         self.start()
 
     async def stop(self) -> None:
@@ -89,7 +90,7 @@ class Worker:
             pass
 
     async def _run(self) -> None:
-        print("[worker] started")
+        events.log("info", "worker", "worker loop started")
         while not self._stop.is_set():
             self._last_heartbeat = time.time()
             try:
@@ -104,7 +105,14 @@ class Worker:
                     await self._sleep(_IDLE_POLL_SECONDS)
                     continue
 
-                await self._handle(job)
+                events.log("info", "worker", f"claimed job (attempt {job.get('attempts', 0) + 1}, "
+                           f"priority {job.get('priority', 0)})",
+                           video_id=job["video_id"], job_id=job["id"])
+                events.begin_job({**job, "attempts": job.get("attempts", 0) + 1})
+                try:
+                    await self._handle(job)
+                finally:
+                    events.end_job()
 
                 # Human-like gap before the next YouTube request.
                 jitter = random.uniform(FETCH_JITTER_MIN_SECONDS, FETCH_JITTER_MAX_SECONDS)
@@ -112,10 +120,10 @@ class Worker:
             except asyncio.CancelledError:
                 raise
             except Exception as e:  # noqa: BLE001 - loop must never die silently
-                print(f"[worker] loop iteration error (continuing): {type(e).__name__}: {e}")
+                events.log("error", "worker", f"loop iteration error (continuing): {type(e).__name__}: {e}")
                 traceback.print_exc()
                 await self._sleep(_CRASH_RESTART_DELAY_SECONDS)
-        print("[worker] stopped")
+        events.log("info", "worker", "worker loop stopped")
 
     async def _handle(self, job: dict) -> None:
         video_id = job["video_id"]
@@ -128,8 +136,9 @@ class Worker:
             repos.reschedule_after_block(job["id"], blocked_until + random.randint(5, 60))
             repos.set_video_status(video_id, "queued", "waiting on backoff")
             wait = max(0, blocked_until - int(time.time()))
-            print(f"[worker] BLOCKED — backing off all requests for ~{wait}s "
-                  f"(level {gate.status()['backoff_level']}); job {job['id']} requeued")
+            events.log("warn", "worker", f"BLOCKED by YouTube — backing off all requests for ~{wait}s "
+                       f"(level {gate.status()['backoff_level']}); job requeued: {str(e)[:300]}",
+                       video_id=video_id, job_id=job["id"])
             return
         except Exception as e:  # noqa: BLE001 - transient/unexpected
             detail = f"{type(e).__name__}: {e}"
@@ -143,12 +152,14 @@ class Worker:
                     error_message=f"{reason}\n\n{traceback.format_exc()}",
                     stage="worker (unexpected error)", video_id=video_id, job=job,
                 )
-                print(f"[worker] job {job['id']} ({video_id}) failed permanently: {detail}")
+                events.log("error", "worker", f"failed permanently after {attempts} attempts: {detail}",
+                           video_id=video_id, job_id=job["id"])
             else:
                 reason = f"transient error (attempt {attempts}/{_MAX_ATTEMPTS}) — {detail}"
                 repos.reschedule_job(job["id"], int(time.time()) + _TRANSIENT_RETRY_SECONDS, reason[:1000])
                 repos.set_video_status(video_id, "queued", reason[:500])
-                print(f"[worker] job {job['id']} ({video_id}) transient error; will retry: {detail}")
+                events.log("warn", "worker", f"transient error, retry in {_TRANSIENT_RETRY_SECONDS}s: {detail}",
+                           video_id=video_id, job_id=job["id"])
             return
 
         # Reached YouTube without a block — clear any standing backoff level.
@@ -157,7 +168,8 @@ class Worker:
             repos.reschedule_job(job["id"], int(time.time()) + _RETRY_LATER_SECONDS, "retry later (upcoming)")
         else:
             repos.complete_job(job["id"])
-        print(f"[worker] job {job['id']} ({video_id}) -> {result}")
+        events.log("info" if result in (JobResult.DONE, JobResult.SKIPPED, JobResult.RETRY_LATER) else "warn",
+                   "worker", f"job finished -> {result}", video_id=video_id, job_id=job["id"])
 
 
 worker = Worker()

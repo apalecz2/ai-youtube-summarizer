@@ -12,14 +12,19 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from app import config, scheduler
-from app.api import actions, auth, channels, content
+from app import config, events, scheduler
+from app.api import actions, auth, channels, content, diagnostics
+from app.db import repos
 from app.db.database import init_db
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
+    events.log("info", "startup", "app started")
+    recovered = repos.requeue_interrupted_jobs()
+    if recovered:
+        events.log("warn", "startup", f"requeued {recovered} job(s) that were interrupted by a restart")
     scheduler.start()
     try:
         yield
@@ -54,7 +59,7 @@ def health():
 
 
 # ── API routers (all under /api) ──────────────────────────────
-for r in (auth.router, channels.router, content.router, actions.router):
+for r in (auth.router, channels.router, content.router, actions.router, diagnostics.router):
     app.include_router(r, prefix="/api")
 
 

@@ -346,6 +346,30 @@ def reschedule_after_block(job_id: int, scheduled_at: int) -> None:
         )
 
 
+def requeue_interrupted_jobs() -> int:
+    """Startup recovery: the worker is single-process, so any job still 'running'
+    when the app boots was interrupted by a restart/crash and would otherwise stay
+    stuck forever (it blocks re-enqueueing too). Put those jobs back to pending and
+    their videos from 'fetching' back to 'queued'. The attempt already charged by
+    claim_due_job is kept, so a video that keeps crashing the app still runs out of
+    retries. Returns the number of jobs recovered."""
+    with db() as conn:
+        rows = conn.execute("SELECT id, video_id FROM fetch_jobs WHERE status='running'").fetchall()
+        if not rows:
+            return 0
+        conn.execute(
+            "UPDATE fetch_jobs SET status='pending', scheduled_at=?, "
+            "last_error='interrupted by restart' WHERE status='running'",
+            (_now(),),
+        )
+        conn.executemany(
+            "UPDATE videos SET status='queued', updated_at=strftime('%s','now') "
+            "WHERE video_id=? AND status='fetching'",
+            [(r["video_id"],) for r in rows],
+        )
+        return len(rows)
+
+
 def prune_jobs(keep_done_after: int) -> int:
     """Delete done/failed jobs older than a cutoff epoch. Returns rows removed."""
     with db() as conn:
@@ -430,3 +454,146 @@ def mark_success() -> None:
         conn.execute(
             "UPDATE rate_limit_state SET backoff_level=0, blocked_until=0, last_success_at=strftime('%s','now') WHERE id=1"
         )
+
+
+# ── Event log + diagnostics (System page) ─────────────────────
+def add_event(level: str, source: str, message: str, *, video_id: Optional[str] = None,
+              job_id: Optional[int] = None) -> None:
+    with db() as conn:
+        conn.execute(
+            "INSERT INTO events (level, source, message, video_id, job_id) VALUES (?, ?, ?, ?, ?)",
+            (level, source, message[:2000], video_id, job_id),
+        )
+
+
+def list_events(*, limit: int = 200, before_id: Optional[int] = None, level: Optional[str] = None,
+                source: Optional[str] = None, video_id: Optional[str] = None,
+                q: Optional[str] = None) -> list[dict]:
+    """Newest first. `level` is a minimum: 'warn' returns warn+error."""
+    where, args = [], []
+    if before_id:
+        where.append("id < ?"); args.append(before_id)
+    if level == "warn":
+        where.append("level IN ('warn','error')")
+    elif level == "error":
+        where.append("level = 'error'")
+    if source:
+        where.append("source = ?"); args.append(source)
+    if video_id:
+        where.append("video_id = ?"); args.append(video_id)
+    if q:
+        where.append("message LIKE ?"); args.append(f"%{q}%")
+    sql = "SELECT * FROM events" + (" WHERE " + " AND ".join(where) if where else "") \
+        + " ORDER BY id DESC LIMIT ?"
+    with db() as conn:
+        return [dict(r) for r in conn.execute(sql, (*args, limit)).fetchall()]
+
+
+def prune_events(keep: int) -> int:
+    with db() as conn:
+        cur = conn.execute(
+            "DELETE FROM events WHERE id <= (SELECT COALESCE(MAX(id), 0) FROM events) - ?", (keep,)
+        )
+        return cur.rowcount
+
+
+def list_jobs(*, status: Optional[str] = None, limit: int = 100) -> list[dict]:
+    """Jobs joined with their video, most recently created first."""
+    sql = """SELECT j.*, v.title, v.channel_name, v.status AS video_status, v.url
+             FROM fetch_jobs j LEFT JOIN videos v ON v.video_id = j.video_id"""
+    args: list[Any] = []
+    if status:
+        sql += " WHERE j.status = ?"; args.append(status)
+    sql += " ORDER BY j.id DESC LIMIT ?"; args.append(limit)
+    with db() as conn:
+        return [dict(r) for r in conn.execute(sql, args).fetchall()]
+
+
+def jobs_for_video(video_id: str) -> list[dict]:
+    with db() as conn:
+        return [dict(r) for r in conn.execute(
+            "SELECT * FROM fetch_jobs WHERE video_id = ? ORDER BY id DESC", (video_id,)).fetchall()]
+
+
+def video_status_counts() -> dict[str, int]:
+    with db() as conn:
+        return {r["status"]: r["n"] for r in conn.execute(
+            "SELECT status, COUNT(*) AS n FROM videos GROUP BY status").fetchall()}
+
+
+def table_counts() -> dict[str, int]:
+    tables = ("channels", "channel_filters", "videos", "transcripts", "summaries",
+              "quizzes", "fetch_jobs", "events")
+    with db() as conn:
+        return {t: conn.execute(f"SELECT COUNT(*) FROM {t}").fetchone()[0] for t in tables}
+
+
+def find_inconsistencies(*, now: Optional[int] = None, running_stale_seconds: int = 1800,
+                         ignore_job_id: Optional[int] = None) -> dict[str, list[dict]]:
+    """Rows whose state doesn't add up — the kind of thing that silently wedges the
+    queue. Each key is a check name; empty list = healthy."""
+    now = now or _now()
+    q = {
+        # 'running' with no worker progress for a long time (orphaned by a restart).
+        "stale_running_jobs": (
+            """SELECT j.id, j.video_id, j.attempts, j.created_at, v.title
+               FROM fetch_jobs j LEFT JOIN videos v USING(video_id)
+               WHERE j.status='running' AND j.id != ?
+                 AND COALESCE((SELECT updated_at FROM videos WHERE video_id=j.video_id), j.created_at) < ?""",
+            (ignore_job_id or -1, now - running_stale_seconds)),
+        # Video says it's being fetched but no job is running.
+        "fetching_without_job": (
+            """SELECT v.video_id, v.title, v.updated_at FROM videos v
+               WHERE v.status='fetching'
+                 AND NOT EXISTS (SELECT 1 FROM fetch_jobs j WHERE j.video_id=v.video_id AND j.status='running')""",
+            ()),
+        # Video says queued but nothing will ever pick it up.
+        "queued_without_job": (
+            """SELECT v.video_id, v.title, v.updated_at FROM videos v
+               WHERE v.status='queued' AND v.updated_at < ?
+                 AND NOT EXISTS (SELECT 1 FROM fetch_jobs j WHERE j.video_id=v.video_id AND j.status IN ('pending','running'))""",
+            (now - 60,)),
+        # Pending/running jobs pointing at a video that is already finished.
+        "job_for_finished_video": (
+            """SELECT j.id, j.video_id, j.status AS job_status, v.status AS video_status, v.title
+               FROM fetch_jobs j JOIN videos v USING(video_id)
+               WHERE j.status IN ('pending','running') AND v.status IN ('summarized','skipped','cancelled','dismissed')""",
+            ()),
+        # Pending jobs overdue by a lot (worker stalled/blocked, or clock issue).
+        "overdue_pending_jobs": (
+            """SELECT j.id, j.video_id, j.scheduled_at, j.last_error, v.title
+               FROM fetch_jobs j LEFT JOIN videos v USING(video_id)
+               WHERE j.status='pending' AND j.scheduled_at < ?""",
+            (now - 3600,)),
+    }
+    with db() as conn:
+        return {name: [dict(r) for r in conn.execute(sql, args).fetchall()]
+                for name, (sql, args) in q.items()}
+
+
+def requeue_stale_jobs(*, running_stale_seconds: int = 1800, ignore_job_id: Optional[int] = None) -> int:
+    """Manual 'fix stuck jobs': like requeue_interrupted_jobs but only touches
+    running jobs that have shown no progress for a while, and never the job the
+    worker is actively on."""
+    stale = find_inconsistencies(running_stale_seconds=running_stale_seconds,
+                                 ignore_job_id=ignore_job_id)["stale_running_jobs"]
+    with db() as conn:
+        for j in stale:
+            conn.execute("UPDATE fetch_jobs SET status='pending', scheduled_at=?, "
+                         "last_error='requeued: was stuck running' WHERE id=?", (_now(), j["id"]))
+            conn.execute("UPDATE videos SET status='queued', updated_at=strftime('%s','now') "
+                         "WHERE video_id=? AND status='fetching'", (j["video_id"],))
+    return len(stale)
+
+
+def clear_backoff() -> None:
+    with db() as conn:
+        conn.execute("UPDATE rate_limit_state SET blocked_until=0, backoff_level=0 WHERE id=1")
+
+
+def recent_status_counts(since: int) -> dict[str, int]:
+    """Videos whose status last changed after `since`, grouped by status."""
+    with db() as conn:
+        return {r["status"]: r["n"] for r in conn.execute(
+            "SELECT status, COUNT(*) AS n FROM videos WHERE updated_at >= ? GROUP BY status",
+            (since,)).fetchall()}

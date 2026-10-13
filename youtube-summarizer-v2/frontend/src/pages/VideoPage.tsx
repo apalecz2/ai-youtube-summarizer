@@ -9,6 +9,7 @@ import { api } from "../api";
 import type { VideoDetail } from "../types";
 import { fmtDate, fmtDuration, statusPill, isRateLimited } from "../util";
 import QuizView from "../components/QuizView";
+import VideoTrace from "../components/VideoTrace";
 
 export default function VideoPage() {
   const { id = "" } = useParams();
@@ -118,6 +119,8 @@ export default function VideoPage() {
       )}
 
       {(summary || transcript) && <QuizView videoId={id} initial={data.quiz} />}
+
+      <VideoTrace videoId={id} />
     </>
   );
 }

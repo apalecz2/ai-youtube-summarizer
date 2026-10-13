@@ -154,6 +154,21 @@ def init_db() -> None:
         """)
         c.execute("INSERT OR IGNORE INTO rate_limit_state (id, blocked_until, backoff_level) VALUES (1, 0, 0)")
 
+        # Persistent internal event log, shown on the UI's System page.
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS events (
+                id       INTEGER PRIMARY KEY AUTOINCREMENT,
+                ts       INTEGER NOT NULL DEFAULT (strftime('%s','now')),
+                level    TEXT NOT NULL DEFAULT 'info',
+                source   TEXT NOT NULL,
+                message  TEXT NOT NULL,
+                video_id TEXT,
+                job_id   INTEGER
+            )
+        """)
+        c.execute("CREATE INDEX IF NOT EXISTS idx_events_ts ON events(ts)")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_events_video ON events(video_id)")
+
         # ── FTS5 search indexes ───────────────────────────────
         c.execute("""
             CREATE VIRTUAL TABLE IF NOT EXISTS transcripts_fts

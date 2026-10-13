@@ -7,6 +7,7 @@ import SummariesPage from "./pages/SummariesPage";
 import VideoPage from "./pages/VideoPage";
 import SearchPage from "./pages/SearchPage";
 import ChannelsPage from "./pages/ChannelsPage";
+import SystemPage from "./pages/SystemPage";
 
 export default function App() {
   const [authed, setAuthed] = useState<boolean | null>(null);
@@ -26,6 +27,7 @@ export default function App() {
           <NavLink to="/" end>Summaries</NavLink>
           <NavLink to="/search">Search</NavLink>
           <NavLink to="/channels">Channels</NavLink>
+          <NavLink to="/system">System</NavLink>
         </nav>
         <span className="spacer" />
         <button onClick={() => api.logout().then(() => setAuthed(false))}>Log out</button>
@@ -38,6 +40,7 @@ export default function App() {
         <Route path="/videos/:id" element={<VideoPage />} />
         <Route path="/search" element={<SearchPage />} />
         <Route path="/channels" element={<ChannelsPage />} />
+        <Route path="/system" element={<SystemPage />} />
       </Routes>
     </div>
   );
