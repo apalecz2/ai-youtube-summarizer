@@ -39,6 +39,15 @@ export function fmtRel(epoch?: number | null, now = Math.floor(Date.now() / 1000
   return d >= 0 ? `in ${t}` : `${t} ago`;
 }
 
+/** "1d 4h" / "3h 20m" / "45m" from a count of seconds. */
+export function fmtSpan(seconds: number): string {
+  const m = Math.max(0, Math.round(seconds / 60));
+  const d = Math.floor(m / 1440), h = Math.floor((m % 1440) / 60), mm = m % 60;
+  if (d) return `${d}d ${h}h`;
+  if (h) return `${h}h ${mm}m`;
+  return `${mm}m`;
+}
+
 export function fmtBytes(n?: number | null): string {
   if (!n) return "0 B";
   const u = ["B", "KB", "MB", "GB"];

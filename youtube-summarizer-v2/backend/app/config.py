@@ -27,7 +27,7 @@ def _minutes_list(name: str, default: str) -> list[int]:
                 out.append(int(part))
             except ValueError:
                 continue
-    return out or [5, 15, 45, 120, 360, 720]
+    return out or [1440, 2880, 5760, 10080]
 
 
 # ── Paths ─────────────────────────────────────────────────────
@@ -74,7 +74,28 @@ RESUME_SPREAD_SECONDS_PER_JOB = _int("RESUME_SPREAD_SECONDS_PER_JOB", 180)
 RESUME_SPREAD_MAX_MINUTES = _int("RESUME_SPREAD_MAX_MINUTES", 480)
 
 # ── Backoff (item 6) ──────────────────────────────────────────
-BACKOFF_SCHEDULE_MINUTES = _minutes_list("BACKOFF_SCHEDULE_MINUTES", "5,15,45,120,360,720")
+# How long the main (yt-dlp) fetch path is suspended once a block is CONFIRMED
+# (two different videos failing in a row). During that time every video goes
+# through the direct-Gemini fallback instead. Each repeat confirmation after a
+# suspension moves one step further down the list (the last step repeats).
+# Deliberately a new variable name: the old BACKOFF_SCHEDULE_MINUTES held 5-720
+# minute steps and an existing .env would otherwise override these.
+BACKOFF_SCHEDULE_MINUTES = _minutes_list("FETCH_SUSPEND_SCHEDULE_MINUTES", "1440,2880,5760,10080")
+# A first failure waits for a second, different video to confirm a block. If none
+# turns up within this long, that video is summarized via the fallback anyway.
+SUSPECT_TIMEOUT_MINUTES = _int("SUSPECT_TIMEOUT_MINUTES", 180)
+
+# ── Gemini limits / direct-video fallback ─────────────────────
+# Per-model input-token budget per minute (provider quota is 250k), and the share
+# of it we allow ourselves to use, so estimates that run a little low don't 429.
+GEMINI_INPUT_TOKENS_PER_MINUTE = _int("GEMINI_INPUT_TOKENS_PER_MINUTE", 250_000)
+GEMINI_TPM_SAFETY_PERCENT = _int("GEMINI_TPM_SAFETY_PERCENT", 85)
+# Measured on gemini-3.x flash: a YouTube video costs ~103 input tokens per second.
+VIDEO_TOKENS_PER_SECOND = _int("VIDEO_TOKENS_PER_SECOND", 103)
+# Longest slice of a video sent in one request, in tokens (~19 min at 103 tok/s).
+# Longer videos are summarized in slices and consolidated, which keeps every
+# request well under the per-minute budget.
+VIDEO_SEGMENT_TOKENS = _int("VIDEO_SEGMENT_TOKENS", 120_000)
 
 # Public base URL of the web app (used for "Open in app" links in emails).
 APP_BASE_URL = os.getenv("APP_BASE_URL", "").rstrip("/")

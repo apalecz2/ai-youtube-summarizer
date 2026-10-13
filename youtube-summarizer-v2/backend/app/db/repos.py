@@ -297,16 +297,18 @@ def enqueue_job(*, video_id: str, scheduled_at: int, job_type: str = "transcript
         return cur.lastrowid
 
 
-def claim_due_job(now: Optional[int] = None) -> Optional[dict]:
+def claim_due_job(now: Optional[int] = None, exclude_video_id: Optional[str] = None) -> Optional[dict]:
     """Atomically grab the next due pending job and mark it 'running'.
-    Returns None if nothing is due. Highest priority, then earliest scheduled."""
+    Returns None if nothing is due. Highest priority, then earliest scheduled.
+    `exclude_video_id` skips one video (the held first failure of a block check)."""
     now = now or _now()
     with db() as conn:
         row = conn.execute(
             """SELECT * FROM fetch_jobs
                WHERE status = 'pending' AND scheduled_at <= ?
+                 AND (? IS NULL OR video_id != ?)
                ORDER BY priority DESC, scheduled_at ASC LIMIT 1""",
-            (now,),
+            (now, exclude_video_id, exclude_video_id),
         ).fetchone()
         if not row:
             return None
@@ -314,6 +316,29 @@ def claim_due_job(now: Optional[int] = None) -> Optional[dict]:
             "UPDATE fetch_jobs SET status='running', attempts=attempts+1 WHERE id=?", (row["id"],)
         )
         return dict(row)
+
+
+def claim_pending_job_for_video(video_id: str) -> Optional[dict]:
+    """Claim a specific video's pending job right now, regardless of its schedule."""
+    with db() as conn:
+        row = conn.execute(
+            "SELECT * FROM fetch_jobs WHERE video_id = ? AND status = 'pending' ORDER BY id LIMIT 1",
+            (video_id,),
+        ).fetchone()
+        if not row:
+            return None
+        conn.execute("UPDATE fetch_jobs SET status='running', attempts=attempts+1 WHERE id=?", (row["id"],))
+        return dict(row)
+
+
+def hold_job(job_id: int, reason: str) -> None:
+    """Put a job back to pending without charging an attempt (the failure wasn't
+    its fault) and note why in last_error."""
+    with db() as conn:
+        conn.execute(
+            "UPDATE fetch_jobs SET status='pending', attempts=MAX(0, attempts-1), last_error=? WHERE id=?",
+            (reason, job_id),
+        )
 
 
 def complete_job(job_id: int) -> None:
@@ -485,7 +510,7 @@ def mark_success() -> None:
     with db() as conn:
         conn.execute(
             "UPDATE rate_limit_state SET backoff_level=0, blocked_until=0, manual=0, "
-            "last_success_at=strftime('%s','now') WHERE id=1"
+            "suspect_video_id=NULL, suspect_at=NULL, last_success_at=strftime('%s','now') WHERE id=1"
         )
 
 
@@ -637,3 +662,22 @@ def set_manual_cooldown(blocked_until: int) -> None:
 def clear_manual_cooldown() -> None:
     with db() as conn:
         conn.execute("UPDATE rate_limit_state SET blocked_until=0, manual=0 WHERE id=1")
+
+
+def set_suspect(video_id: Optional[str]) -> None:
+    """Record (or clear, with None) the first failure awaiting confirmation."""
+    with db() as conn:
+        conn.execute(
+            "UPDATE rate_limit_state SET suspect_video_id=?, suspect_at=? WHERE id=1",
+            (video_id, _now() if video_id else None),
+        )
+
+
+def start_suspension(*, blocked_until: int, backoff_level: int) -> None:
+    """Confirmed block: suspend the main fetch path until `blocked_until`."""
+    with db() as conn:
+        conn.execute(
+            "UPDATE rate_limit_state SET blocked_until=?, backoff_level=?, last_block_at=?, "
+            "manual=0, suspect_video_id=NULL, suspect_at=NULL WHERE id=1",
+            (blocked_until, backoff_level, _now()),
+        )

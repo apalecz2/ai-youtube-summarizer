@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, Query
 
 from app import config, events, scheduler
 from app.db import repos
+from app.llm import provider
 from app.security import require_auth
 from app.worker import worker
 from app.youtube import gate
@@ -48,6 +49,9 @@ def _config_snapshot() -> dict:
         "fetch_spread_minutes": config.FETCH_SPREAD_MINUTES,
         "fetch_jitter_seconds": [config.FETCH_JITTER_MIN_SECONDS, config.FETCH_JITTER_MAX_SECONDS],
         "backoff_schedule_minutes": config.BACKOFF_SCHEDULE_MINUTES,
+        "suspect_timeout_minutes": config.SUSPECT_TIMEOUT_MINUTES,
+        "gemini_models": provider.MODELS,
+        "gemini_tpm_budget": config.GEMINI_INPUT_TOKENS_PER_MINUTE * config.GEMINI_TPM_SAFETY_PERCENT // 100,
         "min_duration_seconds": config.MIN_DURATION_SECONDS,
         "max_duration_seconds": config.MAX_DURATION_SECONDS,
         "cookies_file": config.YTDLP_COOKIES_FILE or None,
@@ -84,7 +88,18 @@ def _health_checks(*, now: int, worker_state: dict, backoff: dict, problems: dic
             f"Heartbeat {int(worker_state['seconds_since_heartbeat'] or 0)}s ago.")
 
     # Rate limit
-    if backoff["blocked"] and backoff.get("manual"):
+    mode = backoff.get("mode")
+    if mode == "fallback":
+        mins = backoff["seconds_remaining"] // 60
+        add("backoff", "warn", f"YouTube fetching suspended (level {backoff['backoff_level']}) — using direct Gemini",
+            f"A block was confirmed by two videos failing in a row. The main fetch path retries in "
+            f"{mins // 1440}d {(mins % 1440) // 60}h {mins % 60}m; until then videos are summarized from "
+            "their URL by Gemini (no transcript is stored for them).")
+    elif mode == "suspect":
+        add("backoff", "warn", "One video failed to fetch — waiting for a second to confirm a block",
+            f"{backoff.get('suspect_video_id')} is held. The next different video decides whether this was a "
+            "one-off (it then uses Gemini) or a real block (fetching is suspended for a day).")
+    elif backoff["blocked"] and backoff.get("manual"):
         add("backoff", "warn", "Manual cooldown active",
             f"Transcript fetching is paused by you for {backoff['seconds_remaining'] // 60}m more. "
             "Discovery keeps running.")

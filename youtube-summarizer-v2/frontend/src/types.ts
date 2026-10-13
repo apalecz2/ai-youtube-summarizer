@@ -99,6 +99,8 @@ export interface BackoffStatus {
   last_success_at: number | null;
   recently_blocked: boolean;
   manual: boolean;
+  mode: "normal" | "suspect" | "fallback" | "manual";
+  suspect_video_id: string | null;
 }
 
 export interface UpcomingJob {
@@ -168,6 +170,9 @@ export interface Diagnostics {
     fetch_spread_minutes: number;
     fetch_jitter_seconds: [number, number];
     backoff_schedule_minutes: number[];
+    suspect_timeout_minutes: number;
+    gemini_models: string[];
+    gemini_tpm_budget: number;
     min_duration_seconds: number;
     max_duration_seconds: number;
     cookies_file: string | null;

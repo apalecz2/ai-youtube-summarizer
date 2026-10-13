@@ -158,6 +158,11 @@ def init_db() -> None:
         rate_limit_cols = {r["name"] for r in c.execute("PRAGMA table_info(rate_limit_state)").fetchall()}
         if "manual" not in rate_limit_cols:
             c.execute("ALTER TABLE rate_limit_state ADD COLUMN manual INTEGER NOT NULL DEFAULT 0")
+        # First fetch failure awaiting a second, different video to confirm a block.
+        if "suspect_video_id" not in rate_limit_cols:
+            c.execute("ALTER TABLE rate_limit_state ADD COLUMN suspect_video_id TEXT")
+        if "suspect_at" not in rate_limit_cols:
+            c.execute("ALTER TABLE rate_limit_state ADD COLUMN suspect_at INTEGER")
 
         # Persistent internal event log, shown on the UI's System page.
         c.execute("""

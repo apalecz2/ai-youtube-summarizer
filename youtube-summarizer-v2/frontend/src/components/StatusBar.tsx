@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api";
 import type { SystemStatus } from "../types";
+import { fmtSpan } from "../util";
 
 // Mirrors backend gate.MAX_MANUAL_COOLDOWN_MINUTES (30 days).
 const _MAX_COOLDOWN_MINUTES = 30 * 24 * 60;
@@ -111,9 +112,13 @@ export default function StatusBar() {
           <span className="pill warn" title="Transcript fetching is manually paused. RSS scanning for new videos keeps running as normal.">
             ⏸ Fetching paused · {Math.ceil(b.seconds_remaining / 60)}m left
           </span>
-        ) : b.blocked ? (
-          <span className="pill bad" title="YouTube is rate-limiting this server's IP. Transcript fetches will fail until this clears or traffic is routed through a different IP.">
-            ⛔ Rate-limited by YouTube (level {b.backoff_level}) · {Math.ceil(b.seconds_remaining / 60)}m left
+        ) : b.mode === "fallback" ? (
+          <span className="pill warn" title="A YouTube block was confirmed (two videos failed in a row). Transcript fetching is suspended and Gemini summarizes videos straight from their URL until it retries.">
+            ↪ Using direct Gemini (level {b.backoff_level}) · YouTube retry in {fmtSpan(b.seconds_remaining)}
+          </span>
+        ) : b.mode === "suspect" ? (
+          <span className="pill warn" title="One video failed to fetch. The next video decides whether it was a one-off or a real block.">
+            ⚠ Checking for a YouTube block…
           </span>
         ) : b.recently_blocked ? (
           <span className="pill warn" title="Recently rate-limited. IP flags last 12–24h, so some transcript fetches may still fail.">

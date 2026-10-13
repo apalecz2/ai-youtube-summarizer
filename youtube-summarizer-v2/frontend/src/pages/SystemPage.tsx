@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import { api } from "../api";
 import type { AppEvent, Diagnostics, JobRow } from "../types";
 import EventList from "../components/EventList";
-import { fmtBytes, fmtDate, fmtRel } from "../util";
+import { fmtBytes, fmtDate, fmtRel, fmtSpan } from "../util";
 
 const LEVEL_ORDER = { bad: 0, warn: 1, ok: 2 } as const;
 const JOB_STATUSES = ["pending", "running", "done", "failed", "cancelled"];
@@ -134,8 +134,8 @@ export default function SystemPage() {
                   Stage: <strong>{a.stage}</strong> for {a.stage_seconds}s · job running {a.running_seconds}s
                 </div>
               </div>
-            ) : d.backoff.blocked ? (
-              <div>Paused — {d.backoff.manual ? "manual cooldown" : "rate-limit backoff"}, resumes {fmtRel(d.backoff.blocked_until, d.now)}</div>
+            ) : d.backoff.manual ? (
+              <div>Paused — manual cooldown, resumes {fmtRel(d.backoff.blocked_until, d.now)}</div>
             ) : (
               <div>Idle (waiting for due jobs)</div>
             )}
@@ -146,9 +146,10 @@ export default function SystemPage() {
           <div>
             <div className="muted">Rate limit</div>
             <div>
-              {d.backoff.manual
-                ? "Manual cooldown (set by you)"
-                : d.backoff.blocked ? `Blocked (level ${d.backoff.backoff_level})` : `OK (level ${d.backoff.backoff_level})`}
+              {d.backoff.mode === "manual" ? "Manual cooldown (set by you)"
+                : d.backoff.mode === "fallback" ? `Suspended (level ${d.backoff.backoff_level}) — using direct Gemini, YouTube retry ${fmtRel(d.backoff.blocked_until, d.now)}`
+                : d.backoff.mode === "suspect" ? `Checking: ${d.backoff.suspect_video_id} failed, waiting for a second video`
+                : `OK (level ${d.backoff.backoff_level})`}
             </div>
             <div className="muted">
               Last block: {d.backoff.last_block_at ? fmtRel(d.backoff.last_block_at, d.now) : "never"} · last success:{" "}
@@ -265,7 +266,10 @@ export default function SystemPage() {
               ["Scan interval", `${d.config.poll_interval_minutes} min`],
               ["Fetch spread window", `${d.config.fetch_spread_minutes} min`],
               ["Jitter between fetches", `${d.config.fetch_jitter_seconds[0]}–${d.config.fetch_jitter_seconds[1]}s`],
-              ["Backoff schedule", d.config.backoff_schedule_minutes.map((m) => `${m}m`).join(" → ")],
+              ["Block suspension schedule", d.config.backoff_schedule_minutes.map((m) => fmtSpan(m * 60)).join(" → ")],
+              ["Block check timeout", `${d.config.suspect_timeout_minutes}m (a lone failure is treated as a one-off after this)`],
+              ["Gemini models (in order)", d.config.gemini_models.join(" → ")],
+              ["Gemini input budget", `${d.config.gemini_tpm_budget.toLocaleString()} tokens/min per model`],
               ["Skip shorter than / longer than", `${d.config.min_duration_seconds}s / ${d.config.max_duration_seconds}s`],
               ["Cookies", d.config.cookies.exists ? `${d.config.cookies_file} (${fmtBytes(d.config.cookies.bytes)}, modified ${fmtRel(d.config.cookies.modified_at ?? null, d.now)})` : `none (${d.config.cookies_file} missing)`],
               ["Proxy", d.config.proxy_set ? "set" : "none"],

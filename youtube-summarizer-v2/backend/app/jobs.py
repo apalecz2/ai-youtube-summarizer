@@ -15,6 +15,8 @@ import yt_dlp
 from app import config, events
 from app.db import repos
 from app.email.emailer import send_summary_email, send_error_email
+from app.llm import video as video_llm
+from app.llm.provider import LLMRateLimited
 from app.llm.summarizer import safe_summarize
 from app.youtube import fetcher, gate
 
@@ -121,6 +123,12 @@ def process_job(job: dict) -> str:
         transcript = None
         transcript_error = f"{type(e).__name__}: {e}"
 
+    if transcript:
+        # The caption download itself worked, which is what tells the worker the main
+        # path is healthy (see worker._after_main_success). A video with no captions
+        # at all never gets here, so it can't mask a block.
+        job["_fetch_ok"] = True
+
     if not transcript or not transcript.get("text"):
         # Explain *why* there's no transcript: a download/parse error, or simply
         # no usable English captions (in which case list what the video does expose).
@@ -181,4 +189,77 @@ def process_job(job: dict) -> str:
             app_url=_app_url(video_id),
         )
 
+    return JobResult.DONE
+
+
+def process_job_fallback(job: dict) -> str:
+    """Same job, but without touching YouTube: Gemini reads the video from its URL.
+    Used while the main fetch path is suspended, and for the video(s) that tripped a
+    block check. No transcript is stored for these, so search/quiz work off the
+    summary alone. Raises LLMRateLimited if every model is rate limited."""
+    video_id = job["video_id"]
+    detail_level = job.get("detail_level", 2)
+    send_email = bool(job.get("send_email", 1))
+    allow_long = job.get("priority", 0) > 0
+
+    video = repos.get_video(video_id) or {}
+    title = video.get("title") or video_id
+    channel = video.get("channel_name")
+    repos.set_video_status(video_id, "fetching")
+    events.log("info", "job", "using direct Gemini video summary (main fetch path unavailable)",
+               video_id=video_id, job_id=job.get("id"))
+
+    # ── Size the video (free token count; also gives us skip-rule inputs) ──
+    events.set_stage("direct video: sizing (Gemini)")
+    duration = int(video.get("duration") or 0)
+    if not duration:
+        try:
+            duration = video_llm.probe_duration(video_id)
+        except LLMRateLimited:
+            raise
+        except Exception as e:  # noqa: BLE001 - private / removed / live / unreachable
+            reason = f"direct video summary failed — couldn't read the video via Gemini: {type(e).__name__}: {e}"
+            events.log("error", "job", reason[:500], video_id=video_id, job_id=job.get("id"))
+            repos.set_video_status(video_id, "failed", reason[:1000])
+            send_failure_email(subject=f"Direct Video Summary Failed: {title}", error_message=reason,
+                               stage="direct video (sizing)", video_id=video_id, job=job)
+            return JobResult.FAILED
+        repos.update_video_metadata(video_id, duration=duration)
+
+    if 0 < duration < config.MIN_DURATION_SECONDS:
+        repos.set_video_status(video_id, "skipped", f"short ({duration}s)")
+        events.log("info", "job", f"skipped: short ({duration}s)", video_id=video_id, job_id=job.get("id"))
+        return JobResult.SKIPPED
+    if duration > config.MAX_DURATION_SECONDS and not allow_long:
+        repos.set_video_status(video_id, "skipped", f"too long ({duration}s)")
+        events.log("info", "job", f"skipped: too long ({duration}s)", video_id=video_id, job_id=job.get("id"))
+        return JobResult.SKIPPED
+
+    # ── Summarize straight from the video ──
+    events.set_stage("direct video: summarizing (Gemini)")
+    try:
+        summary_md, model = video_llm.summarize_video(
+            video_id, duration=duration, detail=detail_level, channel_name=channel, video_title=title)
+    except LLMRateLimited:
+        raise
+    except Exception as e:  # noqa: BLE001
+        reason = f"direct video summary failed — {type(e).__name__}: {e}"
+        events.log("error", "job", reason[:500], video_id=video_id, job_id=job.get("id"))
+        repos.set_video_status(video_id, "failed", reason[:1000])
+        send_failure_email(subject=f"Direct Video Summary Failed: {title}", error_message=reason,
+                           stage="direct video (summarization)", video_id=video_id, job=job)
+        return JobResult.FAILED
+
+    repos.save_summary(video_id, summary_md, detail_level=detail_level, model=f"{model} (direct video)")
+    repos.set_video_status(video_id, "summarized")
+    events.log("info", "job", f"summarized from video URL with {model} ({duration}s video, {len(summary_md)} chars)",
+               video_id=video_id, job_id=job.get("id"))
+
+    if send_email:
+        events.set_stage("emailing summary")
+        send_summary_email(
+            video_title=title, channel_name=channel or "Unknown Channel", summary=summary_md,
+            youtube_url=video.get("url") or f"https://www.youtube.com/watch?v={video_id}",
+            app_url=_app_url(video_id),
+        )
     return JobResult.DONE

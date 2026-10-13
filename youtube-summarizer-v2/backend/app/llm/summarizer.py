@@ -4,10 +4,9 @@ Same detail levels (1=overview, 2=thorough, 3=expert structured) and the same
 chunk-then-consolidate strategy for very long transcripts, but the model call now
 goes through the provider abstraction.
 """
-import time
 from typing import Optional
 
-from app.llm.provider import generate
+from app.llm.provider import LLMRateLimited, generate
 
 # ~100k tokens at ~4 chars/token.
 MAX_SINGLE_PASS_CHARS = 400_000
@@ -76,8 +75,7 @@ def summarize(transcript: str, *, detail: int = 2, channel_name: Optional[str] =
     last_model = ""
     for chunk in _chunks(transcript):
         text, last_model = generate(chunk_instructions + context + chunk)
-        partials.append(text)
-        time.sleep(1)
+        partials.append(text)  # generate() paces chunks against the per-minute token quota
 
     combined = "\n\n".join(partials)
     final_instructions = (
@@ -94,6 +92,8 @@ def safe_summarize(transcript: str, *, detail: int = 2, channel_name: Optional[s
     instead of the error being lost to a print."""
     try:
         return summarize(transcript, detail=detail, channel_name=channel_name, video_title=video_title), None
+    except LLMRateLimited:
+        raise  # not a failure of this video: the worker retries the job later
     except Exception as e:  # noqa: BLE001
         detail_msg = f"{type(e).__name__}: {e}"
         print(f"[summarizer] failed: {detail_msg}")
