@@ -98,6 +98,7 @@ export interface BackoffStatus {
   last_block_at: number | null;
   last_success_at: number | null;
   recently_blocked: boolean;
+  manual: boolean;
 }
 
 export interface UpcomingJob {

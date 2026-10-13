@@ -3,6 +3,9 @@ import { Link } from "react-router-dom";
 import { api } from "../api";
 import type { SystemStatus } from "../types";
 
+// Mirrors backend gate.MAX_MANUAL_COOLDOWN_MINUTES (30 days).
+const _MAX_COOLDOWN_MINUTES = 30 * 24 * 60;
+
 /** Human-readable "in 3m" / "now" from a seconds-until value. */
 function fmtIn(seconds: number): string {
   if (seconds <= 0) return "now";
@@ -20,6 +23,8 @@ export default function StatusBar() {
   const [s, setS] = useState<SystemStatus | null>(null);
   const [open, setOpen] = useState(false);
   const [scanning, setScanning] = useState(false);
+  const [cooldownMinutes, setCooldownMinutes] = useState(60);
+  const [cooldownBusy, setCooldownBusy] = useState(false);
 
   const load = () => api.status().then(setS).catch(() => {});
 
@@ -38,6 +43,26 @@ export default function StatusBar() {
       await load();       // refresh the queue/schedule view
     } finally {
       setScanning(false);
+    }
+  }
+
+  async function startCooldown() {
+    setCooldownBusy(true);
+    try {
+      await api.startCooldown(cooldownMinutes);
+      await load();
+    } finally {
+      setCooldownBusy(false);
+    }
+  }
+
+  async function resumeNow() {
+    setCooldownBusy(true);
+    try {
+      await api.cancelCooldown();
+      await load();
+    } finally {
+      setCooldownBusy(false);
     }
   }
 
@@ -82,6 +107,10 @@ export default function StatusBar() {
           <span className="pill bad" title="The background worker isn't picking up jobs. Queued videos will sit at 'processing soon' until the app is restarted.">
             🛑 Worker stalled{s.worker.alive ? "" : " (not running)"}
           </span>
+        ) : b.manual ? (
+          <span className="pill warn" title="Transcript fetching is manually paused. RSS scanning for new videos keeps running as normal.">
+            ⏸ Fetching paused · {Math.ceil(b.seconds_remaining / 60)}m left
+          </span>
         ) : b.blocked ? (
           <span className="pill bad" title="YouTube is rate-limiting this server's IP. Transcript fetches will fail until this clears or traffic is routed through a different IP.">
             ⛔ Rate-limited by YouTube (level {b.backoff_level}) · {Math.ceil(b.seconds_remaining / 60)}m left
@@ -109,6 +138,38 @@ export default function StatusBar() {
               {scanning ? "Scanning…" : "Scan now"}
             </button>
           </div>
+
+          <div className="cooldown-row" title="Pauses transcript fetching (yt-dlp) for the given length of time. Channel RSS scanning and queueing keep running as normal; fetching resumes automatically when the cooldown ends.">
+            {b.manual ? (
+              <>
+                <span className="muted">
+                  Fetching paused for {Math.ceil(b.seconds_remaining / 60)} more min.
+                </span>
+                <button className="schedule-scan" onClick={resumeNow} disabled={cooldownBusy}>
+                  {cooldownBusy ? "…" : "Resume now"}
+                </button>
+              </>
+            ) : (
+              <>
+                <span className="muted">Pause transcript fetching for</span>
+                <input
+                  type="number"
+                  min={1}
+                  max={_MAX_COOLDOWN_MINUTES}
+                  value={cooldownMinutes}
+                  onChange={(e) =>
+                    setCooldownMinutes(Math.min(_MAX_COOLDOWN_MINUTES, Math.max(1, Number(e.target.value) || 1)))
+                  }
+                  className="cooldown-input"
+                />
+                <span className="muted">min</span>
+                <button className="schedule-scan" onClick={startCooldown} disabled={cooldownBusy}>
+                  {cooldownBusy ? "…" : "Pause"}
+                </button>
+              </>
+            )}
+          </div>
+
           {upcoming.length > 0 && (
             <ul className="schedule-list">
               {upcoming.map((j) => (

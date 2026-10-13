@@ -95,11 +95,6 @@ export default function SystemPage() {
               title="Reset jobs stuck in 'running' (not the one the worker is actively on) back to pending">
               Fix stuck jobs
             </button>
-            <button disabled={!d.backoff.blocked && d.backoff.backoff_level === 0}
-              onClick={() => act(api.clearCooldown, "Backoff cleared.")}
-              title="Clear the rate-limit backoff so the worker resumes immediately (it will re-escalate if still blocked)">
-              Clear backoff
-            </button>
           </div>
         </div>
         <ul className="health">
@@ -140,7 +135,7 @@ export default function SystemPage() {
                 </div>
               </div>
             ) : d.backoff.blocked ? (
-              <div>Paused — rate-limit backoff, resumes {fmtRel(d.backoff.blocked_until, d.now)}</div>
+              <div>Paused — {d.backoff.manual ? "manual cooldown" : "rate-limit backoff"}, resumes {fmtRel(d.backoff.blocked_until, d.now)}</div>
             ) : (
               <div>Idle (waiting for due jobs)</div>
             )}
@@ -151,7 +146,9 @@ export default function SystemPage() {
           <div>
             <div className="muted">Rate limit</div>
             <div>
-              {d.backoff.blocked ? `Blocked (level ${d.backoff.backoff_level})` : `OK (level ${d.backoff.backoff_level})`}
+              {d.backoff.manual
+                ? "Manual cooldown (set by you)"
+                : d.backoff.blocked ? `Blocked (level ${d.backoff.backoff_level})` : `OK (level ${d.backoff.backoff_level})`}
             </div>
             <div className="muted">
               Last block: {d.backoff.last_block_at ? fmtRel(d.backoff.last_block_at, d.now) : "never"} · last success:{" "}

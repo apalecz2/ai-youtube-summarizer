@@ -84,7 +84,11 @@ def _health_checks(*, now: int, worker_state: dict, backoff: dict, problems: dic
             f"Heartbeat {int(worker_state['seconds_since_heartbeat'] or 0)}s ago.")
 
     # Rate limit
-    if backoff["blocked"]:
+    if backoff["blocked"] and backoff.get("manual"):
+        add("backoff", "warn", "Manual cooldown active",
+            f"Transcript fetching is paused by you for {backoff['seconds_remaining'] // 60}m more. "
+            "Discovery keeps running.")
+    elif backoff["blocked"]:
         add("backoff", "bad", f"Rate-limit backoff active (level {backoff['backoff_level']})",
             f"No YouTube requests for {backoff['seconds_remaining']}s more. All queued jobs wait.")
     elif backoff["recently_blocked"]:
@@ -208,11 +212,3 @@ def fix_stuck():
                                  ignore_job_id=activity["job_id"] if activity else None)
     events.log("warn" if n else "info", "api", f"manual 'fix stuck jobs': requeued {n}")
     return {"requeued": n}
-
-
-@router.delete("/cooldown")
-def clear_cooldown():
-    """Clear the rate-limit backoff so the worker resumes immediately."""
-    repos.clear_backoff()
-    events.log("warn", "api", "backoff cleared manually")
-    return {"status": "cleared", "backoff": gate.status()}
