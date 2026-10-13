@@ -14,7 +14,8 @@ import time
 import traceback
 
 from app import events
-from app.config import FETCH_JITTER_MIN_SECONDS, FETCH_JITTER_MAX_SECONDS
+from app.config import (FETCH_JITTER_MIN_SECONDS, FETCH_JITTER_MAX_SECONDS,
+                        RESUME_SPREAD_MAX_MINUTES, RESUME_SPREAD_SECONDS_PER_JOB)
 from app.db import repos
 from app.jobs import JobResult, process_job, send_failure_email
 from app.youtube import gate
@@ -91,14 +92,20 @@ class Worker:
 
     async def _run(self) -> None:
         events.log("info", "worker", "worker loop started")
+        # Tracks pause -> resume so the backlog can be re-spread (see _respread_backlog).
+        was_blocked = gate.is_blocked()
         while not self._stop.is_set():
             self._last_heartbeat = time.time()
             try:
                 # Respect the global backoff window before touching YouTube.
                 remaining = gate.seconds_until_unblocked()
                 if remaining > 0:
+                    was_blocked = True
                     await self._sleep(min(remaining, _BACKOFF_CHECK_CAP_SECONDS))
                     continue
+                if was_blocked:
+                    was_blocked = False
+                    self._respread_backlog()
 
                 job = repos.claim_due_job()
                 if not job:
@@ -124,6 +131,20 @@ class Worker:
                 traceback.print_exc()
                 await self._sleep(_CRASH_RESTART_DELAY_SECONDS)
         events.log("info", "worker", "worker loop stopped")
+
+    def _respread_backlog(self) -> None:
+        """Fetching just resumed (manual cooldown ended/cancelled, or a backoff
+        expired). Jobs that came due while paused would otherwise run back-to-back,
+        which is exactly the burst that gets the IP flagged again. Re-time them one
+        at a time, a few minutes apart, however long that takes (see config)."""
+        n, span = repos.respread_overdue_jobs(
+            avg_gap_seconds=RESUME_SPREAD_SECONDS_PER_JOB,
+            max_total_seconds=RESUME_SPREAD_MAX_MINUTES * 60,
+        )
+        if n:
+            events.log("info", "worker",
+                       f"fetching resumed — re-spread {n} backlogged job(s), ~{RESUME_SPREAD_SECONDS_PER_JOB}s "
+                       f"apart, over the next ~{span // 60}m")
 
     async def _handle(self, job: dict) -> None:
         video_id = job["video_id"]

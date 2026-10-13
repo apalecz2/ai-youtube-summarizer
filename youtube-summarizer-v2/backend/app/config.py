@@ -66,6 +66,12 @@ POLL_INTERVAL_MINUTES = _int("POLL_INTERVAL_MINUTES", 30)
 FETCH_SPREAD_MINUTES = _int("FETCH_SPREAD_MINUTES", 28)
 FETCH_JITTER_MIN_SECONDS = _int("FETCH_JITTER_MIN_SECONDS", 20)
 FETCH_JITTER_MAX_SECONDS = _int("FETCH_JITTER_MAX_SECONDS", 90)
+# When fetching resumes after a pause/backoff, the overdue backlog is re-spread
+# one job at a time, ~this many seconds apart on average (each gap randomized to
+# 50%-150% of it), capped at RESUME_SPREAD_MAX_MINUTES in total. Much gentler than
+# the discovery window, since a big backlog is exactly what re-triggers a 429.
+RESUME_SPREAD_SECONDS_PER_JOB = _int("RESUME_SPREAD_SECONDS_PER_JOB", 180)
+RESUME_SPREAD_MAX_MINUTES = _int("RESUME_SPREAD_MAX_MINUTES", 480)
 
 # ── Backoff (item 6) ──────────────────────────────────────────
 BACKOFF_SCHEDULE_MINUTES = _minutes_list("BACKOFF_SCHEDULE_MINUTES", "5,15,45,120,360,720")

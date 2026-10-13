@@ -370,6 +370,37 @@ def requeue_interrupted_jobs() -> int:
         return len(rows)
 
 
+def respread_overdue_jobs(*, avg_gap_seconds: int, max_total_seconds: int,
+                          now: Optional[int] = None) -> tuple[int, int]:
+    """Re-time every overdue background job (priority 0) so they come due one at a
+    time instead of all at once. Used when fetching resumes after a pause/backoff.
+
+    Jobs keep their original order (oldest first) and get consecutive slots whose
+    gaps are random between 50% and 150% of `avg_gap_seconds` — evenly spread, so
+    unlike independent random times they can't cluster into a burst. If that would
+    run past `max_total_seconds`, the gap shrinks to fit. Manual (priority > 0) jobs
+    keep their time — the user asked for those. Returns (jobs rescheduled, span in
+    seconds covered)."""
+    import random
+    now = now or _now()
+    with db() as conn:
+        rows = conn.execute(
+            "SELECT id FROM fetch_jobs WHERE status='pending' AND priority=0 AND scheduled_at <= ? "
+            "ORDER BY scheduled_at ASC, id ASC",
+            (now,),
+        ).fetchall()
+        if not rows:
+            return 0, 0
+        avg = max(1, min(avg_gap_seconds, max_total_seconds // len(rows)))
+        t = now + random.randint(0, avg)  # first one soon-ish, but not instantly
+        updates = []
+        for r in rows:
+            updates.append((t, r["id"]))
+            t += random.randint(avg // 2, avg + avg // 2)
+        conn.executemany("UPDATE fetch_jobs SET scheduled_at=? WHERE id=?", updates)
+        return len(rows), updates[-1][0] - now
+
+
 def prune_jobs(keep_done_after: int) -> int:
     """Delete done/failed jobs older than a cutoff epoch. Returns rows removed."""
     with db() as conn:

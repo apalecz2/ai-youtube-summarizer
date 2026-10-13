@@ -189,10 +189,13 @@ def diagnose(video: str, *, verbose: bool, do_download: bool) -> bool:
     print(f"    first 80 bytes: {raw[:80]!r}")
 
     if kind == "CAPTIONS":
-        result = fetcher.fetch_transcript_from_info(info)
-        if result and result.get("text"):
-            text = result["text"]
-            print(f"    PARSED OK — {len(text)} chars, lang={result['lang']}, source={result['source']}")
+        # Parse the bytes we already have. Re-calling fetch_transcript_from_info here
+        # would hit the same timedtext URL a second time, which YouTube often 429s
+        # right after the first request and would make a healthy video look blocked.
+        is_json3 = b'"events"' in raw[:2000] or url.find("fmt=json3") != -1
+        text = (fetcher._parse_json3(raw) if is_json3 else fetcher._parse_vtt(raw)).strip()
+        if text:
+            print(f"    PARSED OK — {len(text)} chars, lang={lang}, source={source}")
             print(f"    preview: {text[:160]}…")
             print("    VERDICT: SUCCESS ✅\n")
             return True
