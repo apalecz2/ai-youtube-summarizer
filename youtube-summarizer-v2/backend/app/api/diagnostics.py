@@ -137,6 +137,22 @@ def _health_checks(*, now: int, worker_state: dict, backoff: dict, problems: dic
     if not any(problems.get(k) for k in labels):
         add("consistency", "ok", "Queue and video states are consistent")
 
+    # Gemini daily request budget
+    gem = provider.usage_snapshot()
+    spent = [g for g in gem if g["exhausted"]]
+    if len(spent) == len(gem):
+        add("gemini_quota", "bad", "All Gemini models are out of daily requests",
+            f"Summaries wait for the reset (midnight Pacific, in {gem[0]['resets_in_seconds'] // 3600}h).")
+    elif spent:
+        add("gemini_quota", "warn", f"{len(spent)} Gemini model(s) out of daily requests",
+            "Spent: " + ", ".join(g["model"] for g in spent) + ". Falling back to the next model in the chain.")
+    soon = [g for g in gem if g["projected_exhaustion_in_seconds"] is not None]
+    if soon and not spent:
+        g = min(soon, key=lambda g: g["projected_exhaustion_in_seconds"])
+        add("gemini_pace", "warn", f"{g['model']} is on pace to hit its daily limit",
+            f"{g['used']}/{g['limit']} used; at today's pace it runs out in ~{g['projected_exhaustion_in_seconds'] // 3600}h "
+            f"{(g['projected_exhaustion_in_seconds'] % 3600) // 60}m, before the reset.")
+
     # Config
     if not cfg["cookies"].get("exists"):
         add("cookies", "warn", "No cookies file", f"{cfg['cookies_file']} not found — requests are anonymous, "
@@ -193,6 +209,7 @@ def diagnostics():
             "wal": _file_info(Path(str(db_file) + "-wal")),
         },
         "problems": problems,
+        "gemini": provider.usage_snapshot(),
         "config": cfg,
     }
 

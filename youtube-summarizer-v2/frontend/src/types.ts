@@ -149,6 +149,19 @@ export interface WorkerActivity {
 
 export interface FileInfo { exists: boolean; bytes: number; modified_at: number | null }
 
+export interface GeminiUsage {
+  model: string;
+  limit: number;
+  used: number;
+  remaining: number;
+  tokens_today: number;
+  exhausted: boolean;
+  projected_exhaustion_in_seconds: number | null;
+  resets_in_seconds: number;
+  tokens_last_minute: number;
+  tpm_budget: number;
+}
+
 export interface Diagnostics {
   now: number;
   health: HealthCheck[];
@@ -165,6 +178,7 @@ export interface Diagnostics {
   tables: Record<string, number>;
   database: { path: string; db: FileInfo; wal: FileInfo };
   problems: Record<string, Record<string, unknown>[]>;
+  gemini: GeminiUsage[];
   config: {
     poll_interval_minutes: number;
     fetch_spread_minutes: number;

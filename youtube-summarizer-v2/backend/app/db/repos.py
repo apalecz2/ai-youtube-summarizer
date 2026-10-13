@@ -681,3 +681,40 @@ def start_suspension(*, blocked_until: int, backoff_level: int) -> None:
             "manual=0, suspect_video_id=NULL, suspect_at=NULL WHERE id=1",
             (blocked_until, backoff_level, _now()),
         )
+
+
+# ── Gemini daily usage (RPD) ──────────────────────────────────
+def reserve_llm_request(day: str, model: str, limit: int) -> bool:
+    """Atomically count one request against `model`'s daily limit. Returns False
+    (and counts nothing) if the limit is already reached."""
+    with db() as conn:
+        conn.execute("INSERT OR IGNORE INTO llm_usage (day, model) VALUES (?, ?)", (day, model))
+        cur = conn.execute(
+            "UPDATE llm_usage SET requests = requests + 1 WHERE day=? AND model=? AND requests < ?",
+            (day, model, limit),
+        )
+        return cur.rowcount == 1
+
+
+def refund_llm_request(day: str, model: str) -> None:
+    with db() as conn:
+        conn.execute("UPDATE llm_usage SET requests = MAX(0, requests - 1) WHERE day=? AND model=?", (day, model))
+
+
+def add_llm_tokens(day: str, model: str, tokens: int) -> None:
+    with db() as conn:
+        conn.execute("UPDATE llm_usage SET tokens = tokens + ? WHERE day=? AND model=?", (tokens, day, model))
+
+
+def mark_llm_exhausted(day: str, model: str, limit: int) -> None:
+    """Google said this model hit its DAILY quota (maybe from other use of the same
+    project): treat it as spent for the rest of the day."""
+    with db() as conn:
+        conn.execute("INSERT OR IGNORE INTO llm_usage (day, model) VALUES (?, ?)", (day, model))
+        conn.execute("UPDATE llm_usage SET requests = MAX(requests, ?) WHERE day=? AND model=?", (limit, day, model))
+
+
+def llm_usage(day: str) -> dict[str, dict]:
+    with db() as conn:
+        return {r["model"]: {"requests": r["requests"], "tokens": r["tokens"]} for r in conn.execute(
+            "SELECT model, requests, tokens FROM llm_usage WHERE day = ?", (day,)).fetchall()}

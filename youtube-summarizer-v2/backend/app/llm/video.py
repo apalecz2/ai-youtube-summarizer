@@ -58,6 +58,9 @@ def summarize_video(video_id: str, *, duration: int, detail: int = 2,
     rate = config.VIDEO_TOKENS_PER_SECOND
     max_slice = max(60, config.VIDEO_SEGMENT_TOKENS // rate)
     slices = max(1, math.ceil(duration / max_slice))
+    # Each slice is a request, plus one to consolidate. Check today's remaining
+    # requests up front so a video we can't finish isn't half-processed and wasted.
+    provider.ensure_capacity(slices + 1 if slices > 1 else 1)
 
     if slices == 1:
         prompt = _adapt(DETAIL_PROMPTS[detail]) + context

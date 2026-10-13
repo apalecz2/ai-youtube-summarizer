@@ -85,6 +85,27 @@ BACKOFF_SCHEDULE_MINUTES = _minutes_list("FETCH_SUSPEND_SCHEDULE_MINUTES", "1440
 # turns up within this long, that video is summarized via the fallback anyway.
 SUSPECT_TIMEOUT_MINUTES = _int("SUSPECT_TIMEOUT_MINUTES", 180)
 
+# ── Gemini model chain + daily request limits ─────────────────
+# "model:requests-per-day" pairs in fallback order. A model whose daily count has
+# reached its limit is skipped BEFORE a request is made (the counter resets at
+# midnight Pacific, like Google's). The last entry is the safety net.
+def _model_chain(name: str, default: str) -> list[tuple[str, int]]:
+    out: list[tuple[str, int]] = []
+    for part in os.getenv(name, default).split(","):
+        model, _, limit = part.strip().partition(":")
+        if model:
+            try:
+                out.append((model, int(limit)))
+            except ValueError:
+                out.append((model, 10**9))   # no/invalid limit -> effectively unlimited
+    return out or _model_chain(name, default)
+
+
+GEMINI_MODEL_CHAIN = _model_chain(
+    "GEMINI_MODEL_CHAIN",
+    "gemini-3.8-flash:20,gemini-3.7-flash:20,gemini-3.6-flash:20,gemini-3.5-flash-lite:500",
+)
+
 # ── Gemini limits / direct-video fallback ─────────────────────
 # Per-model input-token budget per minute (provider quota is 250k), and the share
 # of it we allow ourselves to use, so estimates that run a little low don't 429.

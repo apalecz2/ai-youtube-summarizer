@@ -9,3 +9,4 @@ markdown
 yt-dlp
 apscheduler
 itsdangerous
+tzdata

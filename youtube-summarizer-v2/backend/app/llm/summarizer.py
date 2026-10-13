@@ -6,6 +6,7 @@ goes through the provider abstraction.
 """
 from typing import Optional
 
+from app.llm import provider as provider_mod
 from app.llm.provider import LLMRateLimited, generate
 
 # ~100k tokens at ~4 chars/token.
@@ -62,6 +63,9 @@ def summarize(transcript: str, *, detail: int = 2, channel_name: Optional[str] =
               video_title: Optional[str] = None) -> tuple[str, str]:
     """Return (summary_markdown, model_used). Raises on failure."""
     context = _context_block(channel_name, video_title)
+
+    # Same up-front check as the video path: each chunk is a request, plus one to combine.
+    provider_mod.ensure_capacity(1 if len(transcript) <= MAX_SINGLE_PASS_CHARS else len(_chunks(transcript)) + 1)
 
     if len(transcript) <= MAX_SINGLE_PASS_CHARS:
         return generate(DETAIL_PROMPTS[detail] + context + transcript)

@@ -236,12 +236,14 @@ class Worker:
         detail = f"{type(e).__name__}: {e}"
         attempts = int(job.get("attempts", 0))
         if isinstance(e, LLMRateLimited):
-            # Gemini quota, not this video's fault: retry later without using up an attempt.
-            repos.hold_job(job["id"], f"Gemini rate limited — retrying: {str(e)[:300]}")
-            repos.reschedule_job(job["id"], int(time.time()) + _TRANSIENT_RETRY_SECONDS,
-                                 f"Gemini rate limited — retrying: {str(e)[:300]}")
+            # Gemini quota, not this video's fault: retry later without using up an
+            # attempt. For a spent daily quota that's after the midnight-Pacific reset.
+            delay = max(_TRANSIENT_RETRY_SECONDS, e.retry_after or 0)
+            note = f"Gemini rate limited — {str(e)[:300]}"
+            repos.hold_job(job["id"], note)
+            repos.reschedule_job(job["id"], int(time.time()) + delay, note)
             repos.set_video_status(video_id, "queued", "waiting on Gemini rate limit")
-            events.log("warn", "worker", f"all Gemini models rate limited; retry in {_TRANSIENT_RETRY_SECONDS}s",
+            events.log("warn", "worker", f"{str(e)[:200]}; retrying in {delay // 60}m",
                        video_id=video_id, job_id=job["id"])
             return
         if attempts >= _MAX_ATTEMPTS:

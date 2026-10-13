@@ -199,6 +199,37 @@ export default function SystemPage() {
         </p>
       </div>
 
+      {/* ── Gemini usage ── */}
+      <div className="card">
+        <div className="row" style={{ justifyContent: "space-between" }}>
+          <h3>Gemini requests today</h3>
+          <span className="muted">resets at midnight Pacific, in {fmtSpan(d.gemini[0]?.resets_in_seconds ?? 0)}</span>
+        </div>
+        {d.gemini.map((g, i) => {
+          const pct = Math.min(100, Math.round((g.used / g.limit) * 100));
+          const tone = g.exhausted ? "bad" : pct >= 80 ? "warn" : "good";
+          return (
+            <div key={g.model} className="usage-row">
+              <div className="row" style={{ justifyContent: "space-between" }}>
+                <span>{i + 1}. {g.model}{i === d.gemini.length - 1 ? <span className="muted"> (last resort)</span> : null}</span>
+                <span className="muted">
+                  {g.used} / {g.limit} requests · {g.tokens_today.toLocaleString()} input tokens
+                  {g.exhausted ? " · spent, skipped until reset"
+                    : g.projected_exhaustion_in_seconds != null ? ` · on pace to run out in ~${fmtSpan(g.projected_exhaustion_in_seconds)}` : ""}
+                </span>
+              </div>
+              <div className="bar"><div className={`bar-fill ${tone}`} style={{ width: `${pct}%` }} /></div>
+              <div className="muted">
+                Last minute: {g.tokens_last_minute.toLocaleString()} / {g.tpm_budget.toLocaleString()} input tokens
+              </div>
+            </div>
+          );
+        })}
+        <p className="muted" style={{ marginBottom: 0 }}>
+          A model at its daily limit is skipped before any request is made, and the next one in the order above is used.
+        </p>
+      </div>
+
       {/* ── Jobs ── */}
       <div className="card">
         <div className="row" style={{ justifyContent: "space-between" }}>

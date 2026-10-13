@@ -164,6 +164,18 @@ def init_db() -> None:
         if "suspect_at" not in rate_limit_cols:
             c.execute("ALTER TABLE rate_limit_state ADD COLUMN suspect_at INTEGER")
 
+        # Gemini requests made per model per Pacific-time day (Google's RPD resets at
+        # midnight Pacific). Persisted so a restart doesn't forget what was spent.
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS llm_usage (
+                day      TEXT NOT NULL,
+                model    TEXT NOT NULL,
+                requests INTEGER NOT NULL DEFAULT 0,
+                tokens   INTEGER NOT NULL DEFAULT 0,
+                PRIMARY KEY (day, model)
+            )
+        """)
+
         # Persistent internal event log, shown on the UI's System page.
         c.execute("""
             CREATE TABLE IF NOT EXISTS events (
